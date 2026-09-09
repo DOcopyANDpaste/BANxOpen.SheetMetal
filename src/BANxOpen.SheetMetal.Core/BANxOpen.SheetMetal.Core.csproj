@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Sheet metal domain logic, pure managed and free of NXOpen so it targets net8.0 as well as net48 and
+    stays unit-testable without an NX session.
+
+    One folder per feature (Beads\, and Louvers\/Joggles\ as they arrive) over shared Common\, SpecData\
+    and Materials\ layers, rather than an assembly per feature: the shared spec-workbook parsing and
+    grade mapping have an obvious home, and the number of DLLs deployed into NX does not grow with the
+    number of features.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BANxOpen.Foundation\src\BANxOpen.Foundation.Contracts\BANxOpen.Foundation.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BANxOpen.Foundation\src\BANxOpen.Foundation.Core\BANxOpen.Foundation.Core.csproj" />
+    <!-- The material engine: this project supplies IFeatureMaterialConstraintProvider implementations
+         so the shared assignment pipeline can enforce sheet metal restrictions. -->
+    <ProjectReference Include="..\..\..\BANxOpen.Foundation\src\BANxOpen.Foundation.Core.Materials\BANxOpen.Foundation.Core.Materials.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reads the SPEC workbooks (SpecData\ExcelBeadSpecParser.cs). Pure managed, no NXOpen dependency,
+         so it can live here and be unit-tested without an NX session. -->
+    <PackageReference Include="ClosedXML" Version="0.104.1" />
+    <!-- Serializes the parsed spec cache and the material-grade map (SpecData\BeadSpecCache.cs,
+         Materials\MaterialGradeMap.cs). net48 needs the package; net8.0 has it in-box but taking the
+         package on both keeps one version pinned. -->
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFrameworks>net48;net8.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>12.0</LangVersion>
+  </PropertyGroup>
+
+</Project>
