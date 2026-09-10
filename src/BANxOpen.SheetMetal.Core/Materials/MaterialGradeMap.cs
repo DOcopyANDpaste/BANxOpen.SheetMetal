@@ -27,6 +27,11 @@ public sealed class MaterialGradeMap
         return new MaterialGradeMap(entries);
     }
 
+    /// <summary>Builds a map from entries already in memory — for tests, and for any caller that sources the
+    /// mapping from somewhere other than the JSON file.</summary>
+    public static MaterialGradeMap FromEntries(IReadOnlyDictionary<string, string> entries) =>
+        new(new Dictionary<string, string>(entries.ToDictionary(kv => kv.Key, kv => kv.Value)));
+
     /// <summary>Null when the NX material name has no entry — the caller (SheetMetalProfileReader) surfaces
     /// that as "material grade not recognized" rather than guessing.</summary>
     public string? GradeFor(string nxPhysicalMaterialName) =>
