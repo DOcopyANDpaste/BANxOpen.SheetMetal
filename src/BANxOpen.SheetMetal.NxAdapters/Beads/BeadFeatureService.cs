@@ -12,16 +12,22 @@ namespace BANxOpen.SheetMetal.NxAdapters.Beads;
 /// curve maps to one Bead feature" rule (no chaining). Cross section is fixed to Circular and end type
 /// fixed to Formed (per the requirements); minimum tool clearance is never touched, so NX's own default
 /// stands. Depth/Radius/DieRadius are bound to named expressions via <see cref="ExpressionService"/>
-/// rather than set as literals.</summary>
+/// rather than set as literals.
+///
+/// Which SPEC column supplies each builder parameter comes from <see cref="BeadSettings.ParameterMapping"/>,
+/// the same mapping <see cref="BeadSpecMatcher"/> uses to identify an unstamped bead — so what is written and
+/// what is later recognised cannot disagree.</summary>
 public sealed class BeadFeatureService
 {
     private readonly NxSessionContext _context;
     private readonly ExpressionService _expressionService;
+    private readonly BeadSettings _settings;
 
-    public BeadFeatureService(NxSessionContext context, ExpressionService expressionService)
+    public BeadFeatureService(NxSessionContext context, ExpressionService expressionService, BeadSettings settings)
     {
         _context = context;
         _expressionService = expressionService;
+        _settings = settings;
     }
 
     /// <summary>Create-mode when <paramref name="existingFeature"/> is null; edit-mode (re-opens the
@@ -53,7 +59,11 @@ public sealed class BeadFeatureService
             // the builder, not settable as objects) — the unit is read off Height so our named expressions
             // are created in the same unit system the builder already expects, rather than guessing a unit.
             var expressionSet = _expressionService.EnsureSpecExpressions(
-                spec.StandardId, spec.SpecId, spec.Height, spec.RadiusAndRadS, spec.DieRadiusP, builder.Height.Units);
+                spec.StandardId, spec.SpecId,
+                _settings.SpecValueFor(spec, BeadFeatureParameter.Height),
+                _settings.SpecValueFor(spec, BeadFeatureParameter.Radius),
+                _settings.SpecValueFor(spec, BeadFeatureParameter.DieRadius),
+                builder.Height.Units);
 
             ExpressionService.BindToExpression(builder.Height, expressionSet.Depth);
             ExpressionService.BindToExpression(builder.Radius, expressionSet.Radius);

@@ -13,4 +13,15 @@ public sealed class BeadSpecFinder
 
     public IReadOnlyList<BeadSpecRow> FindValid(SheetMetalProfile profile, IEnumerable<BeadSpecRow> candidates) =>
         candidates.Where(row => _validator.Validate(profile, row).IsValid).ToList();
+
+    /// <summary>Grades allowed by at least one of <paramref name="specs"/> whose thickness matches
+    /// <paramref name="thickness"/> — what a body with no material yet could be given and still have a valid
+    /// SPEC to choose from in this Standard. Thickness uses <see cref="Rules.ThicknessMatchRule"/>'s
+    /// tolerance so this agrees with what validation will accept afterwards.</summary>
+    public static IReadOnlyCollection<string> AllowedGradesAt(IEnumerable<BeadSpecRow> specs, double thickness) =>
+        new HashSet<string>(
+            specs
+                .Where(spec => Math.Abs(spec.Thickness - thickness) <= Rules.ThicknessMatchRule.ToleranceInches)
+                .SelectMany(spec => spec.AllowedMaterialGrades.Where(kv => kv.Value).Select(kv => kv.Key)),
+            StringComparer.Ordinal);
 }

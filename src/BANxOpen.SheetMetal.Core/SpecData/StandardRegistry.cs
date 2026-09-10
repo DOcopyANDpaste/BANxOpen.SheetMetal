@@ -9,7 +9,10 @@ namespace BANxOpen.SheetMetal.SpecData;
 /// [
 ///   { "id": "B1005010", "displayName": "B1005010 - Aluminum Beads", "workbookPath": "\\\\server\\share\\B1005010.xlsx" }
 /// ]
-/// </code></summary>
+/// </code>
+/// A relative <c>workbookPath</c> is resolved against the folder holding this registry file, not the process's
+/// working directory. The registry is located through <c>SheetMetalConfigLocator</c> and read from inside NX,
+/// whose working directory is unrelated to where the config lives.</summary>
 public sealed class StandardRegistry
 {
     private readonly string _registryPath;
@@ -25,10 +28,19 @@ public sealed class StandardRegistry
         var entries = JsonSerializer.Deserialize<List<Entry>>(stream)
             ?? throw new InvalidDataException($"Standards registry at '{_registryPath}' is empty or invalid.");
 
+        var registryDirectory = Path.GetDirectoryName(Path.GetFullPath(_registryPath)) ?? "";
+
         return entries
-            .Select(e => new StandardInfo(e.Id, e.DisplayName, e.WorkbookPath))
+            .Select(e => new StandardInfo(e.Id, e.DisplayName, ResolveWorkbookPath(registryDirectory, e.WorkbookPath)))
             .ToList();
     }
+
+    // Path.Combine returns the second argument unchanged when it is rooted, so absolute and UNC paths pass
+    // straight through.
+    private static string ResolveWorkbookPath(string registryDirectory, string workbookPath) =>
+        string.IsNullOrWhiteSpace(workbookPath) || Path.IsPathRooted(workbookPath)
+            ? workbookPath
+            : Path.GetFullPath(Path.Combine(registryDirectory, workbookPath));
 
     private sealed class Entry
     {

@@ -66,6 +66,9 @@ public static class SheetMetalConfigLocator
 
     public static string MaterialGradeMapPath() => Path.Combine(Locate(), "material-grade-map.json");
 
+    /// <summary>Optional: a missing file means default settings. See <c>BeadSettings.Load</c>.</summary>
+    public static string BeadSettingsPath() => Path.Combine(Locate(), "bead-settings.json");
+
     /// <summary>Where parsed SPEC workbooks are cached. Created on demand: it is generated output, so it
     /// is gitignored and will not exist on a fresh clone.</summary>
     public static string CacheDirectory()

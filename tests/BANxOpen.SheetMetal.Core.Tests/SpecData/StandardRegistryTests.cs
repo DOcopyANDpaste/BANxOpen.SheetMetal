@@ -30,6 +30,28 @@ public class StandardRegistryTests
     }
 
     [Fact]
+    public void Load_RelativeWorkbookPath_ResolvesAgainstTheRegistryFolderNotTheWorkingDirectory()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"registry-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "standards.json");
+        File.WriteAllText(path, """
+            [ { "id": "B1005010", "displayName": "Beads", "workbookPath": "workbooks\\B1005010.xlsx" } ]
+            """);
+
+        try
+        {
+            var standards = new StandardRegistry(path).Load();
+
+            Assert.Equal(Path.Combine(dir, "workbooks", "B1005010.xlsx"), standards[0].WorkbookPath);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Load_MissingFile_Throws()
     {
         var path = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.json");

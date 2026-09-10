@@ -61,8 +61,10 @@ public sealed class SheetMetalProfileReader
             // "unassigned" path, not an error (same behavior PartMaterialService.ReadPhysicalMaterial relies on).
         }
 
+        // Thickness is still reported without a material: the material picker narrows its list to grades that a
+        // SPEC at this thickness allows, and the tree should show a thickness that has, in fact, been read.
         if (string.IsNullOrEmpty(materialName))
-            return OperationResult<ProfileReadOutcome>.Success(new ProfileReadOutcome(null, MaterialMissing: true, MaterialName: null));
+            return OperationResult<ProfileReadOutcome>.Success(new ProfileReadOutcome(null, MaterialMissing: true, MaterialName: null, Thickness: thickness));
 
         var grade = _gradeMap.GradeFor(materialName!);
         if (grade is null)
@@ -73,8 +75,8 @@ public sealed class SheetMetalProfileReader
         }
 
         var profile = new SheetMetalProfile(new BodyId(body.JournalIdentifier), body.Name ?? body.JournalIdentifier, thickness, grade);
-        return OperationResult<ProfileReadOutcome>.Success(new ProfileReadOutcome(profile, MaterialMissing: false, MaterialName: materialName));
+        return OperationResult<ProfileReadOutcome>.Success(new ProfileReadOutcome(profile, MaterialMissing: false, MaterialName: materialName, Thickness: thickness));
     }
 }
 
-public sealed record ProfileReadOutcome(SheetMetalProfile? Profile, bool MaterialMissing, string? MaterialName);
+public sealed record ProfileReadOutcome(SheetMetalProfile? Profile, bool MaterialMissing, string? MaterialName, double Thickness);
