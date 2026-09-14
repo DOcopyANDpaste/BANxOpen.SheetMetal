@@ -1,5 +1,7 @@
+using BANxOpen.Foundation.Core.Materials.Assignment;
 using BANxOpen.Foundation.Core.Materials.Constraints;
 using BANxOpen.Foundation.NxAdapters;
+using BANxOpen.Foundation.NxAdapters.Materials;
 using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.Common;
 using BANxOpen.SheetMetal.Materials;
@@ -10,10 +12,11 @@ namespace BANxOpen.SheetMetal.NxAdapters.Common;
 
 /// <summary>The sheet metal pieces more than one entry point needs, built once from the shared config.
 ///
-/// Both the bead dialog and the Material Assignment dialog enforce bead SPEC restrictions, so both need the
-/// same standards registry, spec cache, grade map, bead settings and constraint provider. Building them here
-/// rather than in each composition root is what guarantees the two dialogs read the same config files and
-/// judge a body by the same rules; two hand-wired copies would drift the first time one of them changed.</summary>
+/// Both the bead dialog and the Material Assignment dialog enforce bead SPEC restrictions and keep the part's
+/// Sheet Metal Preferences in step with the assigned material, so both need the same standards registry, spec
+/// cache, grade map, bead settings, constraint providers, effect rules and executors. Building them here rather
+/// than in each composition root is what guarantees the two dialogs read the same config files and judge a body by
+/// the same rules; two hand-wired copies would drift the first time one of them changed.</summary>
 public sealed class SheetMetalServices
 {
     private SheetMetalServices(
@@ -24,7 +27,11 @@ public sealed class SheetMetalServices
         BeadSettings beadSettings,
         BeadTracebackService tracebackService,
         BeadGeometryReader geometryReader,
-        BeadMaterialConstraintProvider beadConstraints)
+        BeadMaterialConstraintProvider beadConstraints,
+        SheetMetalPreferenceService preferenceService,
+        SheetMetalPreferenceConstraintProvider preferenceConstraints,
+        SyncSheetMetalPreferenceEffectRule preferenceSyncRule,
+        SheetMetalPreferenceSyncExecutor preferenceSyncExecutor)
     {
         StandardRegistry = standardRegistry;
         SpecCache = specCache;
@@ -34,6 +41,10 @@ public sealed class SheetMetalServices
         TracebackService = tracebackService;
         GeometryReader = geometryReader;
         BeadConstraints = beadConstraints;
+        PreferenceService = preferenceService;
+        PreferenceConstraints = preferenceConstraints;
+        EffectRules = new IPostAssignmentEffectRule[] { preferenceSyncRule };
+        SideEffectExecutors = new ISideEffectExecutor[] { preferenceSyncExecutor };
     }
 
     public StandardRegistry StandardRegistry { get; }
@@ -53,8 +64,23 @@ public sealed class SheetMetalServices
     /// <summary>Register this with the material engine so assignments honour the beads on a body.</summary>
     public BeadMaterialConstraintProvider BeadConstraints { get; }
 
+    /// <summary>Reads and syncs the work part's Sheet Metal Preferences.</summary>
+    public SheetMetalPreferenceService PreferenceService { get; }
+
+    /// <summary>Register this with the material engine so an assignment the preferences could not follow is refused.</summary>
+    public SheetMetalPreferenceConstraintProvider PreferenceConstraints { get; }
+
     /// <summary>Every constraint provider this domain contributes — one line in a composition root.</summary>
-    public IReadOnlyList<IFeatureMaterialConstraintProvider> ConstraintProviders => new IFeatureMaterialConstraintProvider[] { BeadConstraints };
+    public IReadOnlyList<IFeatureMaterialConstraintProvider> ConstraintProviders =>
+        new IFeatureMaterialConstraintProvider[] { BeadConstraints, PreferenceConstraints };
+
+    /// <summary>Post-assignment effect rules this domain contributes, to run alongside
+    /// <c>StandardMaterialRules.Effects()</c>.</summary>
+    public IReadOnlyList<IPostAssignmentEffectRule> EffectRules { get; }
+
+    /// <summary>The executors for <see cref="EffectRules"/>' instructions, to register with <c>PartMaterialService</c>.
+    /// The two are only ever wired together: a rule whose executor is missing is skipped at Apply.</summary>
+    public IReadOnlyList<ISideEffectExecutor> SideEffectExecutors { get; }
 
     /// <summary>Loads the config and builds the services.</summary>
     /// <returns>A failure carrying a user-facing message when the config directory cannot be found or a
@@ -75,9 +101,14 @@ public sealed class SheetMetalServices
             var inventory = new BeadFeatureInventory(context, tracebackService, geometryReader);
             var beadConstraints = new BeadMaterialConstraintProvider(inventory, specLookup, gradeMap, beadSettings);
 
+            var preferenceService = new SheetMetalPreferenceService(context);
+            var preferenceConstraints = new SheetMetalPreferenceConstraintProvider(preferenceService, gradeMap);
+
             return BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices>.Success(new SheetMetalServices(
                 standardRegistry, specCache, specLookup, gradeMap, beadSettings,
-                tracebackService, geometryReader, beadConstraints));
+                tracebackService, geometryReader, beadConstraints,
+                preferenceService, preferenceConstraints,
+                new SyncSheetMetalPreferenceEffectRule(gradeMap), new SheetMetalPreferenceSyncExecutor(preferenceService)));
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException or InvalidDataException
                                        or IOException or UnauthorizedAccessException)
