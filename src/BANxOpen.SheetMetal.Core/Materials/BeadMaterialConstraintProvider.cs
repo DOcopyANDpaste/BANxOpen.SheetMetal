@@ -1,5 +1,5 @@
 using BANxOpen.Foundation.Contracts.Common;
-using BANxOpen.Foundation.Core.Materials.Constraints;
+using BANxOpen.Foundation.Core.Materials.Rules.Features;
 using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.SpecData;
 

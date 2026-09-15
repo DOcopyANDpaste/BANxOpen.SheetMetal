@@ -1,5 +1,6 @@
 using BANxOpen.Foundation.Contracts.Bodies;
 using BANxOpen.Foundation.Core.Materials.Assignment;
+using BANxOpen.Foundation.Core.Materials.Rules;
 
 namespace BANxOpen.SheetMetal.Materials;
 
@@ -18,14 +19,18 @@ public sealed class SyncSheetMetalPreferenceEffectRule : IPostAssignmentEffectRu
     /// <summary>Data key for the grade label to set — a <c>string</c>.</summary>
     public const string GradeLabelDataKey = "GradeLabel";
 
+    private static readonly string[] EmittedInstructionTypes = { InstructionType };
+
     private readonly MaterialGradeMap _gradeMap;
 
     public SyncSheetMetalPreferenceEffectRule(MaterialGradeMap gradeMap) => _gradeMap = gradeMap;
 
     public string RuleId => InstructionType;
 
-    /// <summary>After the coating display material sync (200).</summary>
-    public int Order => 300;
+    /// <summary>After the display material sync.</summary>
+    public int Order => MaterialRuleOrder.SideEffect.DomainState;
+
+    public IReadOnlyCollection<string> InstructionTypes => EmittedInstructionTypes;
 
     public IReadOnlyList<SideEffectInstruction> GenerateEffects(MaterialAssignmentRuleContext context)
     {

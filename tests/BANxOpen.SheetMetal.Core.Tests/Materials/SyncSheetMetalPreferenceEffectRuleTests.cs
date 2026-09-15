@@ -52,4 +52,13 @@ public class SyncSheetMetalPreferenceEffectRuleTests
     {
         Assert.Empty(Effects(BodyKind.SheetMetal, "Titanium Grade 5"));
     }
+
+    [Fact]
+    public void Declares_the_instruction_type_its_executor_registers_under()
+    {
+        // The material engine checks every declared type has an executor; an undeclared one would slip past it.
+        Assert.Equal(
+            new[] { SyncSheetMetalPreferenceEffectRule.InstructionType },
+            new SyncSheetMetalPreferenceEffectRule(GradeMap).InstructionTypes);
+    }
 }
