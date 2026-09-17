@@ -1,27 +1,29 @@
 using BANxOpen.SheetMetal.Beads;
+using BANxOpen.SheetMetal.Materials;
 
 namespace BANxOpen.SheetMetal.SpecData;
 
-/// <summary>The real <see cref="IBeadSpecSource"/>: Standards come from <see cref="StandardRegistry"/>,
-/// each Standard's rows come from its workbook via <see cref="ExcelBeadSpecParser"/>. Kept as a thin
-/// composition so both pieces stay independently testable (parser against an in-memory workbook, registry
-/// against a temp JSON file).</summary>
+/// <summary>The real <see cref="IBeadSpecSource"/>: Standards come from the sheet metal material standards file, each
+/// Standard's workbook from its folder (<see cref="StandardFolderLayout"/>), and the rows from the workbook via
+/// <see cref="ExcelBeadSpecParser"/>. Kept as a thin composition so each piece stays independently testable.</summary>
 public sealed class FileSystemBeadSpecSource : IBeadSpecSource
 {
-    private readonly StandardRegistry _registry;
+    private readonly SheetMetalMaterialTable _table;
     private readonly ExcelBeadSpecParser _parser;
 
-    public FileSystemBeadSpecSource(StandardRegistry registry, ExcelBeadSpecParser parser)
+    public FileSystemBeadSpecSource(SheetMetalMaterialTable table, ExcelBeadSpecParser parser)
     {
-        _registry = registry;
+        _table = table;
         _parser = parser;
     }
 
-    public IReadOnlyList<StandardInfo> ListStandards() => _registry.Load();
+    public IReadOnlyList<StandardInfo> ListStandards() => StandardFolderLayout.ListStandards(_table);
 
-    public IReadOnlyList<BeadSpecRow> ReadWorkbook(StandardInfo standard)
+    public string? FindWorkbook(StandardInfo standard) => StandardFolderLayout.FindBeadWorkbook(standard);
+
+    public IReadOnlyList<BeadSpecRow> ReadWorkbook(StandardInfo standard, string workbookPath)
     {
-        using var stream = File.OpenRead(standard.WorkbookPath);
+        using var stream = File.OpenRead(workbookPath);
         return _parser.Parse(standard.Id, stream);
     }
 }

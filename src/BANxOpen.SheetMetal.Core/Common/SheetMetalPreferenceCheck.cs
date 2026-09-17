@@ -7,12 +7,14 @@ public enum SheetMetalPreferenceStatus
 {
     InSync,
 
-    /// <summary>The body's grade is not in the NX material standards table, so the preferences cannot be set to
-    /// it. Nothing the tool can do fixes this.</summary>
-    MaterialNotInStandardsTable,
+    /// <summary>No material is set, or Parameter Entry is not Material Table, so NX is not using a material from the
+    /// sheet metal material standards file.</summary>
+    MaterialNotSet,
 
-    /// <summary>The preferences are not using the body's grade — a different material, none, or an entry mode
-    /// other than Material Table. The preferences can be synced to the body.</summary>
+    /// <summary>The preferences name a material the standards file does not list.</summary>
+    MaterialNotInTable,
+
+    /// <summary>The preferences' material is made of a different physical material than the body.</summary>
     MaterialOutOfSync,
 
     /// <summary>The body's thickness differs from the preferences' thickness. Reported, never synced: which of the
@@ -27,61 +29,63 @@ public sealed record SheetMetalPreferenceCheckResult(SheetMetalPreferenceStatus 
     public static readonly SheetMetalPreferenceCheckResult InSync = new(SheetMetalPreferenceStatus.InSync, null);
 }
 
-/// <summary>Checks a sheet metal body against its part's Sheet Metal Preferences before any SPEC is validated
-/// against the body.
+/// <summary>Checks a sheet metal body against its part's Sheet Metal Preferences.
 ///
-/// Material is checked before thickness. Syncing the material switches Parameter Entry to Material Table, which
-/// can change the table-driven thickness, so a thickness compared before the material is settled could be the
-/// wrong one to report.
+/// Material is checked before thickness: NX fills the thickness from the material's row, so a thickness compared
+/// before the material is settled could be the wrong one to report.
 ///
-/// A body with no material is checked on thickness only. "No material" is the material picker's business, and
-/// assigning one through the material engine syncs the preferences itself.</summary>
+/// A body with no physical material is not checked against the row's physical material — assigning one is part of
+/// applying a picked row.</summary>
 public static class SheetMetalPreferenceCheck
 {
     /// <summary>The same tolerance the SPEC thickness check uses, so a thickness the preferences accept is one a
     /// SPEC accepts too.</summary>
     public const double ThicknessTolerance = ThicknessMatchRule.ToleranceInches;
 
-    public static SheetMetalPreferenceCheckResult Evaluate(SheetMetalProfile profile, SheetMetalPartPreference preference)
-    {
-        // net48's reference assemblies aren't nullable-annotated, so the explicit null check narrows `grade`.
-        var grade = profile.MaterialGradeLabel;
-        if (grade is not null && !string.IsNullOrWhiteSpace(grade))
-        {
-            if (!preference.DefinesMaterial(grade))
-            {
-                return new SheetMetalPreferenceCheckResult(
-                    SheetMetalPreferenceStatus.MaterialNotInStandardsTable,
-                    $"This body's material grade '{grade}' is not in the NX sheet metal material standards table, so " +
-                    "Sheet Metal Preferences cannot be set to it. Add it to the standards table, or assign a material " +
-                    "whose grade is there.");
-            }
+    public static bool ThicknessMatches(double a, double b) => Math.Abs(a - b) <= ThicknessTolerance;
 
-            if (!preference.UsesMaterial(grade))
-            {
-                return new SheetMetalPreferenceCheckResult(
-                    SheetMetalPreferenceStatus.MaterialOutOfSync,
-                    $"{DescribeMaterial(preference)}, but this body's material grade is '{grade}'.");
-            }
+    /// <param name="bodyPhysicalMaterialName">The body's physical material, or null when it has none.</param>
+    /// <param name="bodyThickness">In part units.</param>
+    public static SheetMetalPreferenceCheckResult Evaluate(
+        string? bodyPhysicalMaterialName, double bodyThickness, SheetMetalPartPreference preference)
+    {
+        if (!preference.IsMaterialTableEntry || string.IsNullOrWhiteSpace(preference.MaterialName))
+        {
+            return new SheetMetalPreferenceCheckResult(
+                SheetMetalPreferenceStatus.MaterialNotSet,
+                preference.IsMaterialTableEntry
+                    ? "Sheet Metal Preferences have no material."
+                    : "Sheet Metal Preferences are not set to Material Table entry, so NX is not using a material from the " +
+                      "sheet metal material standards file.");
         }
 
-        if (Math.Abs(profile.Thickness - preference.Thickness) > ThicknessTolerance)
+        if (preference.Row is not { } row)
+        {
+            return new SheetMetalPreferenceCheckResult(
+                SheetMetalPreferenceStatus.MaterialNotInTable,
+                $"Sheet Metal Preferences have material '{preference.MaterialName}', which the sheet metal material " +
+                "standards file does not list.");
+        }
+
+        // net48's reference assemblies aren't nullable-annotated, so the explicit null check narrows the name.
+        if (bodyPhysicalMaterialName is not null
+            && !string.IsNullOrWhiteSpace(bodyPhysicalMaterialName)
+            && !string.Equals(row.PhysicalMaterialName, bodyPhysicalMaterialName, StringComparison.OrdinalIgnoreCase))
+        {
+            return new SheetMetalPreferenceCheckResult(
+                SheetMetalPreferenceStatus.MaterialOutOfSync,
+                $"Sheet Metal Preferences have material '{row.Name}', made of '{row.PhysicalMaterialName}', but this " +
+                $"body's material is '{bodyPhysicalMaterialName}'.");
+        }
+
+        if (!ThicknessMatches(bodyThickness, preference.Thickness))
         {
             return new SheetMetalPreferenceCheckResult(
                 SheetMetalPreferenceStatus.ThicknessMismatch,
-                $"This sheet metal is {profile.Thickness:0.####} thick, but Sheet Metal Preferences specify " +
+                $"This sheet metal is {bodyThickness:0.####} thick, but Sheet Metal Preferences specify " +
                 $"{preference.Thickness:0.####}. Correct the body's thickness or the preferences before validating a SPEC.");
         }
 
         return SheetMetalPreferenceCheckResult.InSync;
-    }
-
-    private static string DescribeMaterial(SheetMetalPartPreference preference)
-    {
-        var material = string.IsNullOrWhiteSpace(preference.MaterialName) ? "no material" : $"material '{preference.MaterialName}'";
-
-        return preference.IsMaterialTableEntry
-            ? $"Sheet Metal Preferences have {material}"
-            : $"Sheet Metal Preferences are not set to Material Table entry (they have {material}), so NX is not using a material from them";
     }
 }

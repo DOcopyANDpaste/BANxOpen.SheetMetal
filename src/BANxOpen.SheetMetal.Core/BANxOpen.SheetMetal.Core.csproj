@@ -2,11 +2,12 @@
 
   <!--
     Sheet metal domain logic, pure managed and free of NXOpen so it targets net8.0 as well as net48 and
-    stays unit-testable without an NX session.
+    stays unit-testable without an NX session. Building it does need NX installed, though: the JSON readers
+    bind against the Newtonsoft.Json that NX itself ships (see the reference below).
 
     One folder per feature (Beads\, and Louvers\/Joggles\ as they arrive) over shared Common\, SpecData\
     and Materials\ layers, rather than an assembly per feature: the shared spec-workbook parsing and
-    grade mapping have an obvious home, and the number of DLLs deployed into NX does not grow with the
+    sheet metal material table have an obvious home, and the number of DLLs deployed into NX does not grow with the
     number of features.
   -->
 
@@ -22,10 +23,27 @@
     <!-- Reads the SPEC workbooks (SpecData\ExcelBeadSpecParser.cs). Pure managed, no NXOpen dependency,
          so it can live here and be unit-tested without an NX session. -->
     <PackageReference Include="ClosedXML" Version="0.104.1" />
-    <!-- Serializes the parsed spec cache and the material-grade map (SpecData\BeadSpecCache.cs,
-         Materials\MaterialGradeMap.cs). net48 needs the package; net8.0 has it in-box but taking the
-         package on both keeps one version pinned. -->
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <!--
+    Serializes the parsed spec cache and reads the bead and sheet metal settings (SpecData\BeadSpecCache.cs,
+    Beads\BeadSettings.cs, Common\SheetMetalSettings.cs) with the same Newtonsoft.Json NX itself
+    loads (13.0.1, from NXBIN\managed), so a tool running inside NX never binds against a second copy.
+    Referenced through UGII_BASE_DIR, never a hardcoded install path — Skills/nxopen-csharp-patterns §4.
+  -->
+  <Target Name="RequireUgiiBaseDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(UGII_BASE_DIR)' == ''"
+           Text="UGII_BASE_DIR is not set. This project references Newtonsoft.Json from the NX installation (NXBIN\managed) and can only be built on a machine with NX installed." />
+  </Target>
+
+  <ItemGroup>
+    <!-- Copy-local, unlike the NXOpen references in the NxAdapters projects: the net8.0 unit tests need the
+         assembly beside the test binaries. Inside NX the copy is redundant but harmless — the identical version is
+         already loaded from NX's own folder. -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(UGII_BASE_DIR)\NXBIN\managed\Newtonsoft.Json.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
   </ItemGroup>
 
   <PropertyGroup>

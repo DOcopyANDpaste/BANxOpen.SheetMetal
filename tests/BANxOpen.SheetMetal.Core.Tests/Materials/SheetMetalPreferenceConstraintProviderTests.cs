@@ -16,20 +16,14 @@ public class SheetMetalPreferenceConstraintProviderTests
     private static readonly BodyInfo Body =
         new(BodyId, "SM_BODY", BodyKind.SheetMetal, Volume: 0.0, Attributes: new Dictionary<string, string>());
 
-    // "Titanium Grade 5" is deliberately unmapped.
-    private static readonly MaterialGradeMap GradeMap = MaterialGradeMap.FromEntries(new Dictionary<string, string>
-    {
-        ["Aluminum 2024-O"] = "2024-O",
-        ["Aluminum 5052-O"] = "5052-O",
-        ["Aluminum 7075-T6"] = "7075-T6",
-    });
+    // "Titanium Grade 5" deliberately has no row.
+    private static readonly SheetMetalMaterialTable Table = TableRows.AluminumTable();
 
-    // 7075-T6 is deliberately missing from the NX standards table.
     private static SheetMetalPartPreference Preference(int sheetMetalBodies = 1) =>
-        new("2024-O", IsMaterialTableEntry: true, Thickness: 0.02, new[] { "2024-O", "5052-O" }, sheetMetalBodies);
+        new("2024-O_0.020", IsMaterialTableEntry: true, Thickness: 0.02, sheetMetalBodies, Table.Find("2024-O_0.020"));
 
     private static SheetMetalPreferenceConstraintProvider Provider(SheetMetalPreferenceRead read) =>
-        new(new FixedReader(read), GradeMap);
+        new(new FixedReader(read), Table);
 
     private static SheetMetalPreferenceConstraintProvider Provider(int sheetMetalBodies = 1) =>
         Provider(SheetMetalPreferenceRead.Of(Preference(sheetMetalBodies)));
@@ -50,37 +44,26 @@ public class SheetMetalPreferenceConstraintProviderTests
     }
 
     [Fact]
-    public void Allows_a_material_whose_grade_is_in_the_standards_table()
+    public void Allows_a_material_with_a_row()
     {
         Assert.Equal(RuleDecision.Allow, Gate(Provider(), "Aluminum 2024-O").Decision);
     }
 
     [Fact]
-    public void Allows_a_grade_that_differs_from_the_current_preferences()
+    public void Allows_a_material_that_differs_from_the_current_preferences()
     {
         // The assignment's own sync brings the preferences in line, so a difference is not a reason to refuse.
         Assert.Equal(RuleDecision.Allow, Gate(Provider(), "Aluminum 5052-O").Decision);
     }
 
     [Fact]
-    public void Blocks_an_unmapped_material()
+    public void Blocks_a_material_with_no_row()
     {
         var outcome = Gate(Provider(), "Titanium Grade 5");
 
         Assert.Equal(RuleDecision.Block, outcome.Decision);
-        Assert.Equal(SheetMetalPreferenceConstraintProvider.GradeUnmappedCode, outcome.ReasonCode);
-        Assert.Contains("material-grade-map", outcome.Message);
-    }
-
-    [Fact]
-    public void Blocks_a_grade_missing_from_the_standards_table()
-    {
-        var outcome = Gate(Provider(), "Aluminum 7075-T6");
-
-        Assert.Equal(RuleDecision.Block, outcome.Decision);
-        Assert.Equal(SheetMetalPreferenceConstraintProvider.NotInStandardsTableCode, outcome.ReasonCode);
-        Assert.Contains("7075-T6", outcome.Message);
-        Assert.Contains("Sheet Metal Preferences", outcome.Message);
+        Assert.Equal(SheetMetalPreferenceConstraintProvider.NotInTableCode, outcome.ReasonCode);
+        Assert.Contains("PHYSICAL_MATERIAL_NAME = 'Titanium Grade 5'", outcome.Message);
     }
 
     [Fact]
@@ -96,7 +79,7 @@ public class SheetMetalPreferenceConstraintProviderTests
     [Fact]
     public void The_shared_preferences_warning_never_masks_a_refusal()
     {
-        Assert.Equal(RuleDecision.Block, Gate(Provider(sheetMetalBodies: 2), "Aluminum 7075-T6").Decision);
+        Assert.Equal(RuleDecision.Block, Gate(Provider(sheetMetalBodies: 2), "Titanium Grade 5").Decision);
     }
 
     [Fact]
@@ -112,7 +95,7 @@ public class SheetMetalPreferenceConstraintProviderTests
     }
 
     [Fact]
-    public void Assignable_material_query_offers_only_materials_the_preferences_can_take()
+    public void Assignable_material_query_offers_every_material_with_a_row()
     {
         var query = new AssignableMaterialQuery(
             new MaterialAssignmentPlanner(new[] { new FeatureConstraintGateRule(Provider()) }));
@@ -121,7 +104,7 @@ public class SheetMetalPreferenceConstraintProviderTests
             Body, null,
             new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6", "Titanium Grade 5" }.Select(MakeMaterial));
 
-        Assert.Equal(new[] { "Aluminum 2024-O", "Aluminum 5052-O" }, offered.Select(m => m.Name));
+        Assert.Equal(new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6" }, offered.Select(m => m.Name));
     }
 
     private sealed class FixedReader : ISheetMetalPreferenceReader

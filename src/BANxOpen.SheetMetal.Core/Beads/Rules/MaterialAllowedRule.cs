@@ -4,7 +4,8 @@ namespace BANxOpen.SheetMetal.Beads.Rules;
 
 /// <summary>The sheet metal's material grade must be one of the candidate SPEC's "Allowed Material" YES
 /// columns. Distinguishes "grade not recognized at all" (the workbook has no such column — likely a
-/// material-grade-map gap) from "recognized but marked '-'" (a genuine spec restriction), since the two
+/// SheetMetal_Material value in the sheet metal material standards file that no workbook column spells the same way)
+/// from "recognized but marked '-'" (a genuine spec restriction), since the two
 /// call for different user action.</summary>
 public sealed class MaterialAllowedRule : IGateRule<BeadValidationContext, RuleOutcome>
 {
@@ -30,7 +31,7 @@ public sealed class MaterialAllowedRule : IGateRule<BeadValidationContext, RuleO
                 RuleDecision.Block,
                 "MATERIAL_GRADE_UNRECOGNIZED",
                 $"Material grade '{grade}' is not a column in Standard '{context.Candidate.StandardId}'s workbook — " +
-                "check the material-grade mapping and the workbook's header row.");
+                "check the SheetMetal_Material value in the sheet metal material standards file and the workbook's header row.");
 
         return new RuleOutcome(
             RuleId,

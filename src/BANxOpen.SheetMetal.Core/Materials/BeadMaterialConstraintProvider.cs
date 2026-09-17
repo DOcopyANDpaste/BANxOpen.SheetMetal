@@ -21,7 +21,7 @@ namespace BANxOpen.SheetMetal.Materials;
 ///
 /// Blocking cases, since a restriction that silently fails open is the defect this exists to fix:
 /// <list type="bullet">
-/// <item>A material with no grade-map entry cannot be checked against any SPEC →
+/// <item>A material with no row in the sheet metal material standards file has no grade to check against any SPEC →
 /// <see cref="GradeUnrecognizedCode"/>. Emitted once, ahead of the per-SPEC constraints, so the user is told
 /// to fix the mapping rather than shown one refusal per SPEC.</item>
 /// <item>A recognised grade a SPEC does not allow → <see cref="NotAllowedCode"/>, naming the SPEC.</item>
@@ -42,15 +42,15 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
 
     private readonly IFeatureInventory _inventory;
     private readonly IBeadSpecLookup _specs;
-    private readonly MaterialGradeMap _gradeMap;
+    private readonly SheetMetalMaterialTable _table;
     private readonly BeadSettings _settings;
 
     public BeadMaterialConstraintProvider(
-        IFeatureInventory inventory, IBeadSpecLookup specs, MaterialGradeMap gradeMap, BeadSettings settings)
+        IFeatureInventory inventory, IBeadSpecLookup specs, SheetMetalMaterialTable table, BeadSettings settings)
     {
         _inventory = inventory;
         _specs = specs;
-        _gradeMap = gradeMap;
+        _table = table;
         _settings = settings;
     }
 
@@ -106,10 +106,10 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
                 DomainId,
                 distinct.Count == 1 ? distinct[0].Label : $"{distinct.Count} bead SPECs on this body",
                 GradeUnrecognizedCode,
-                candidate => _gradeMap.GradeFor(candidate.Name) is not null,
+                candidate => _table.GradeForPhysicalMaterial(candidate.Name) is not null,
                 candidate =>
-                    $"Material '{candidate.Name}' has no entry in material-grade-map.json, so it cannot be checked " +
-                    "against the bead SPECs on this body. Add a mapping for it before assigning."));
+                    $"Material '{candidate.Name}' has no row in the sheet metal material standards file, so it cannot be " +
+                    "checked against the bead SPECs on this body. Add a row for it before assigning."));
         }
 
         foreach (var spec in distinct)
@@ -199,9 +199,9 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
             NotAllowedCode,
             // An unmapped grade passes here on purpose: the grade-recognition constraint already blocks it, with
             // a message that says what is actually wrong.
-            candidate => _gradeMap.GradeFor(candidate.Name) is not { } grade || row.IsAllowedFor(grade),
+            candidate => _table.GradeForPhysicalMaterial(candidate.Name) is not { } grade || row.IsAllowedFor(grade),
             candidate =>
-                $"Material '{candidate.Name}' (grade '{_gradeMap.GradeFor(candidate.Name)}') is not allowed by " +
+                $"Material '{candidate.Name}' (grade '{_table.GradeForPhysicalMaterial(candidate.Name)}') is not allowed by " +
                 $"SPEC '{row.SpecId}'.");
     }
 

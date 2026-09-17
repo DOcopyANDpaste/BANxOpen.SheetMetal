@@ -12,27 +12,25 @@ namespace BANxOpen.SheetMetal.NxAdapters.Common;
 /// <summary>The sheet metal pieces more than one entry point needs, built once from the shared config.
 ///
 /// Both the bead dialog and the Material Assignment dialog enforce bead SPEC restrictions and keep the part's
-/// Sheet Metal Preferences in step with the assigned material, so both need the same standards registry, spec
-/// cache, grade map, bead settings and material rule modules. Building them here rather than in each composition
+/// Sheet Metal Preferences in step with the assigned material, so both need the same sheet metal material standards
+/// file, spec cache, bead settings and material rule modules. Building them here rather than in each composition
 /// root is what guarantees the two dialogs read the same config files and judge a body by the same rules; two
 /// hand-wired copies would drift the first time one of them changed.</summary>
 public sealed class SheetMetalServices
 {
     private SheetMetalServices(
-        StandardRegistry standardRegistry,
+        SheetMetalMaterialTable materialTable,
         BeadSpecCache specCache,
         IBeadSpecLookup specLookup,
-        MaterialGradeMap gradeMap,
         BeadSettings beadSettings,
         BeadTracebackService tracebackService,
         BeadGeometryReader geometryReader,
         SheetMetalPreferenceService preferenceService,
         IReadOnlyList<INxMaterialRuleModule> materialModules)
     {
-        StandardRegistry = standardRegistry;
+        MaterialTable = materialTable;
         SpecCache = specCache;
         SpecLookup = specLookup;
-        GradeMap = gradeMap;
         BeadSettings = beadSettings;
         TracebackService = tracebackService;
         GeometryReader = geometryReader;
@@ -40,13 +38,12 @@ public sealed class SheetMetalServices
         MaterialModules = materialModules;
     }
 
-    public StandardRegistry StandardRegistry { get; }
+    /// <summary>NX's sheet metal material standards file: every material, its physical material, grade and Standard.</summary>
+    public SheetMetalMaterialTable MaterialTable { get; }
 
     public BeadSpecCache SpecCache { get; }
 
     public IBeadSpecLookup SpecLookup { get; }
-
-    public MaterialGradeMap GradeMap { get; }
 
     public BeadSettings BeadSettings { get; }
 
@@ -63,35 +60,35 @@ public sealed class SheetMetalServices
     public IReadOnlyList<INxMaterialRuleModule> MaterialModules { get; }
 
     /// <summary>Loads the config and builds the services.</summary>
-    /// <returns>A failure carrying a user-facing message when the config directory cannot be found or a
-    /// config file is missing or invalid. Callers show it and stop, rather than starting with partial rules.</returns>
+    /// <returns>A failure carrying a user-facing message when the config directory or the sheet metal material
+    /// standards file cannot be found, or either is invalid. Callers show it and stop, rather than starting with partial rules.</returns>
     public static BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices> Create(NxSessionContext context)
     {
         try
         {
-            var standardRegistry = new StandardRegistry(SheetMetalConfigLocator.StandardsRegistryPath());
-            var specSource = new FileSystemBeadSpecSource(standardRegistry, new ExcelBeadSpecParser());
+            var settings = SheetMetalSettings.Load(SheetMetalConfigLocator.SettingsPath());
+            var materialTable = SheetMetalMaterialTable.Load(SheetMetalMaterialTableLocator.Locate(context, settings));
+            var specSource = new FileSystemBeadSpecSource(materialTable, new ExcelBeadSpecParser());
             var specCache = new BeadSpecCache(specSource, SheetMetalConfigLocator.CacheDirectory());
             var specLookup = new BeadSpecLookup(specCache, context.Log.Warn);
-            var gradeMap = MaterialGradeMap.Load(SheetMetalConfigLocator.MaterialGradeMapPath());
             var beadSettings = BeadSettings.Load(SheetMetalConfigLocator.BeadSettingsPath());
 
             var tracebackService = new BeadTracebackService(context);
             var geometryReader = new BeadGeometryReader(context);
             var inventory = new BeadFeatureInventory(context, tracebackService, geometryReader);
-            var preferenceService = new SheetMetalPreferenceService(context);
+            var preferenceService = new SheetMetalPreferenceService(context, materialTable);
 
             var materialModules = new INxMaterialRuleModule[]
             {
-                new BeadFeatureRuleModule(new BeadMaterialConstraintProvider(inventory, specLookup, gradeMap, beadSettings)),
+                new BeadFeatureRuleModule(new BeadMaterialConstraintProvider(inventory, specLookup, materialTable, beadSettings)),
                 new SheetMetalPreferenceRuleModule(
-                    new SheetMetalPreferenceConstraintProvider(preferenceService, gradeMap),
-                    new SyncSheetMetalPreferenceEffectRule(gradeMap),
-                    new SheetMetalPreferenceSyncExecutor(preferenceService)),
+                    new SheetMetalPreferenceConstraintProvider(preferenceService, materialTable),
+                    new SyncSheetMetalPreferenceEffectRule(materialTable),
+                    new SheetMetalPreferenceSyncExecutor(preferenceService, materialTable)),
             };
 
             return BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices>.Success(new SheetMetalServices(
-                standardRegistry, specCache, specLookup, gradeMap, beadSettings,
+                materialTable, specCache, specLookup, beadSettings,
                 tracebackService, geometryReader, preferenceService, materialModules));
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException or InvalidDataException

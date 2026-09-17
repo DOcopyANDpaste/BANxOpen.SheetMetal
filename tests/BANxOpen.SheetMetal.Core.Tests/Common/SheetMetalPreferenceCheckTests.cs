@@ -1,79 +1,75 @@
-using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.SheetMetal.Common;
+using BANxOpen.SheetMetal.Materials;
+using BANxOpen.SheetMetal.Tests.Materials;
 
 namespace BANxOpen.SheetMetal.Tests.Common;
 
 public class SheetMetalPreferenceCheckTests
 {
-    private static readonly string[] StandardsTable = { "2024-O", "5052-O", "7075-T6" };
+    private static readonly SheetMetalMaterialTable Table = TableRows.AluminumTable();
 
-    private static SheetMetalProfile Profile(string? grade = "2024-O", double thickness = 0.02) =>
-        new(new BodyId("body-1"), "SM_BODY", thickness, grade);
+    private static SheetMetalPartPreference Preference(string? material = "2024-O_0.020", bool materialTable = true, double thickness = 0.02) =>
+        new(material, materialTable, thickness, SheetMetalBodyCount: 1, Table.Find(material));
 
-    private static SheetMetalPartPreference Preference(
-        string? material = "2024-O", bool materialTable = true, double thickness = 0.02, IReadOnlyList<string>? table = null) =>
-        new(material, materialTable, thickness, table ?? StandardsTable, SheetMetalBodyCount: 1);
-
-    private static SheetMetalPreferenceStatus StatusOf(SheetMetalProfile profile, SheetMetalPartPreference preference) =>
-        SheetMetalPreferenceCheck.Evaluate(profile, preference).Status;
+    private static SheetMetalPreferenceCheckResult Evaluate(
+        string? bodyMaterial = "Aluminum 2024-O", double bodyThickness = 0.02, SheetMetalPartPreference? preference = null) =>
+        SheetMetalPreferenceCheck.Evaluate(bodyMaterial, bodyThickness, preference ?? Preference());
 
     [Fact]
-    public void Matching_material_and_thickness_are_in_sync()
+    public void A_row_of_the_bodys_material_at_its_thickness_is_in_sync()
     {
-        var result = SheetMetalPreferenceCheck.Evaluate(Profile(), Preference());
+        var result = Evaluate();
 
         Assert.Equal(SheetMetalPreferenceStatus.InSync, result.Status);
         Assert.Null(result.Message);
     }
 
     [Fact]
-    public void A_different_preference_material_is_out_of_sync_and_names_both_materials()
+    public void A_row_made_of_a_different_material_is_out_of_sync_and_names_both_materials()
     {
-        var result = SheetMetalPreferenceCheck.Evaluate(Profile("2024-O"), Preference(material: "5052-O"));
+        var result = Evaluate(preference: Preference("5052-O_0.020"));
 
         Assert.Equal(SheetMetalPreferenceStatus.MaterialOutOfSync, result.Status);
-        Assert.Contains("5052-O", result.Message);
-        Assert.Contains("2024-O", result.Message);
+        Assert.Contains("Aluminum 5052-O", result.Message);
+        Assert.Contains("Aluminum 2024-O", result.Message);
     }
 
     [Fact]
-    public void The_right_material_outside_Material_Table_entry_is_out_of_sync()
+    public void The_right_material_outside_Material_Table_entry_is_not_set()
     {
         // NX ignores the preferences' material in Value or Tool ID entry, so a matching name is not enough.
-        var result = SheetMetalPreferenceCheck.Evaluate(Profile("2024-O"), Preference(material: "2024-O", materialTable: false));
+        var result = Evaluate(preference: Preference(materialTable: false));
 
-        Assert.Equal(SheetMetalPreferenceStatus.MaterialOutOfSync, result.Status);
+        Assert.Equal(SheetMetalPreferenceStatus.MaterialNotSet, result.Status);
         Assert.Contains("Material Table", result.Message);
     }
 
     [Fact]
-    public void Preferences_with_no_material_are_out_of_sync()
+    public void Preferences_with_no_material_are_not_set()
     {
-        Assert.Equal(SheetMetalPreferenceStatus.MaterialOutOfSync, StatusOf(Profile("2024-O"), Preference(material: null)));
+        Assert.Equal(SheetMetalPreferenceStatus.MaterialNotSet, Evaluate(preference: Preference(material: null)).Status);
     }
 
     [Fact]
-    public void A_grade_missing_from_the_standards_table_cannot_be_synced()
+    public void A_material_the_standards_file_does_not_list_is_reported_by_name()
     {
-        var result = SheetMetalPreferenceCheck.Evaluate(Profile("6061-T6"), Preference(material: "2024-O"));
+        var result = Evaluate(preference: Preference(material: "Retired_Material"));
 
-        Assert.Equal(SheetMetalPreferenceStatus.MaterialNotInStandardsTable, result.Status);
-        Assert.Contains("6061-T6", result.Message);
+        Assert.Equal(SheetMetalPreferenceStatus.MaterialNotInTable, result.Status);
+        Assert.Contains("Retired_Material", result.Message);
     }
 
     [Fact]
-    public void Material_names_are_compared_without_regard_to_case()
+    public void Physical_material_names_are_compared_without_regard_to_case()
     {
-        Assert.Equal(
-            SheetMetalPreferenceStatus.InSync,
-            StatusOf(Profile("2024-O"), Preference(material: "2024-o", table: new[] { "2024-o" })));
+        Assert.Equal(SheetMetalPreferenceStatus.InSync, Evaluate(bodyMaterial: "ALUMINUM 2024-o").Status);
     }
 
     [Fact]
     public void A_thickness_beyond_tolerance_is_a_mismatch()
     {
-        var result = SheetMetalPreferenceCheck.Evaluate(
-            Profile(thickness: 0.02), Preference(thickness: 0.02 + SheetMetalPreferenceCheck.ThicknessTolerance * 2));
+        var result = Evaluate(
+            bodyThickness: 0.02, preference: Preference(thickness: 0.02 + SheetMetalPreferenceCheck.ThicknessTolerance * 2));
 
         Assert.Equal(SheetMetalPreferenceStatus.ThicknessMismatch, result.Status);
         Assert.Contains("0.02", result.Message);
@@ -84,25 +80,25 @@ public class SheetMetalPreferenceCheckTests
     {
         Assert.Equal(
             SheetMetalPreferenceStatus.InSync,
-            StatusOf(Profile(thickness: 0.02), Preference(thickness: 0.02 + SheetMetalPreferenceCheck.ThicknessTolerance / 2)));
+            Evaluate(bodyThickness: 0.02, preference: Preference(thickness: 0.02 + SheetMetalPreferenceCheck.ThicknessTolerance / 2)).Status);
     }
 
     [Fact]
     public void Material_is_reported_before_thickness()
     {
-        // Syncing the material can change the table-driven thickness, so thickness is only worth reporting once
-        // the material is settled.
+        // NX fills the thickness from the material's row, so thickness is only worth reporting once the material is
+        // settled.
         Assert.Equal(
             SheetMetalPreferenceStatus.MaterialOutOfSync,
-            StatusOf(Profile("2024-O", thickness: 0.02), Preference(material: "5052-O", thickness: 0.05)));
+            Evaluate(bodyThickness: 0.02, preference: Preference("5052-O_0.020", thickness: 0.05)).Status);
     }
 
     [Fact]
     public void A_body_without_material_is_checked_on_thickness_only()
     {
-        Assert.Equal(SheetMetalPreferenceStatus.InSync, StatusOf(Profile(grade: null), Preference(material: "5052-O")));
+        Assert.Equal(SheetMetalPreferenceStatus.InSync, Evaluate(bodyMaterial: null, preference: Preference("5052-O_0.020")).Status);
         Assert.Equal(
             SheetMetalPreferenceStatus.ThicknessMismatch,
-            StatusOf(Profile(grade: null, thickness: 0.02), Preference(material: "5052-O", thickness: 0.05)));
+            Evaluate(bodyMaterial: null, bodyThickness: 0.02, preference: Preference("5052-O_0.020", thickness: 0.05)).Status);
     }
 }

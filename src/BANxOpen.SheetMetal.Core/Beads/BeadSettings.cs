@@ -1,5 +1,5 @@
-using System.Text.Json;
 using BANxOpen.SheetMetal.Beads.Rules;
+using Newtonsoft.Json;
 
 namespace BANxOpen.SheetMetal.Beads;
 
@@ -81,8 +81,9 @@ public sealed class BeadSettings
         SettingsFile? file;
         try
         {
-            using var stream = File.OpenRead(path);
-            file = JsonSerializer.Deserialize<SettingsFile>(stream, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            // Newtonsoft matches property names case-insensitively by default, so the camelCase file above binds to
+            // these PascalCase members exactly as it did before.
+            file = JsonConvert.DeserializeObject<SettingsFile>(File.ReadAllText(path));
         }
         catch (JsonException ex)
         {

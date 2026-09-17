@@ -19,13 +19,8 @@ public class BeadMaterialConstraintProviderTests
     private static readonly BodyInfo Body =
         new(BodyId, "SM_BODY", BodyKind.SheetMetal, Volume: 0.0, Attributes: new Dictionary<string, string>());
 
-    // NX material names -> workbook grade labels. "Titanium Grade 5" is deliberately unmapped.
-    private static readonly MaterialGradeMap GradeMap = MaterialGradeMap.FromEntries(new Dictionary<string, string>
-    {
-        ["Aluminum 2024-O"] = "2024-O",
-        ["Aluminum 5052-O"] = "5052-O",
-        ["Aluminum 7075-T6"] = "7075-T6",
-    });
+    // NX material names -> workbook grade labels. "Titanium Grade 5" deliberately has no row.
+    private static readonly SheetMetalMaterialTable Table = TableRows.AluminumTable();
 
     /// <summary>A SPEC row. Geometry defaults are shared, so rows differ in shape only when a test says so.</summary>
     private static BeadSpecRow Spec(
@@ -53,7 +48,7 @@ public class BeadMaterialConstraintProviderTests
 
     private static BeadMaterialConstraintProvider Provider(
         IEnumerable<FeatureSpecStamp> stamps, IEnumerable<UnstampedFeature> unstamped, params BeadSpecRow[] workbookRows) =>
-        new(new FakeInventory(stamps, unstamped), new FakeSpecLookup(workbookRows), GradeMap, BeadSettings.Default);
+        new(new FakeInventory(stamps, unstamped), new FakeSpecLookup(workbookRows), Table, BeadSettings.Default);
 
     private static BeadMaterialConstraintProvider Provider(
         IEnumerable<FeatureSpecStamp> stamps, params BeadSpecRow[] workbookRows) =>
@@ -136,7 +131,7 @@ public class BeadMaterialConstraintProviderTests
         var outcome = Gate(provider, "Titanium Grade 5");
 
         Assert.Equal(BeadMaterialConstraintProvider.GradeUnrecognizedCode, outcome.ReasonCode);
-        Assert.Contains("material-grade-map", outcome.Message);
+        Assert.Contains("sheet metal material standards file", outcome.Message);
     }
 
     [Fact]
@@ -284,7 +279,7 @@ public class BeadMaterialConstraintProviderTests
     {
         var provider = new BeadMaterialConstraintProvider(
             new FixedInventory(BodyFeatureInventory.Unreadable("NX 12345: feature list unavailable")),
-            new FakeSpecLookup(Array.Empty<BeadSpecRow>()), GradeMap, BeadSettings.Default);
+            new FakeSpecLookup(Array.Empty<BeadSpecRow>()), Table, BeadSettings.Default);
 
         var outcome = Gate(provider, "Aluminum 2024-O");
 
@@ -323,7 +318,7 @@ public class BeadMaterialConstraintProviderTests
         // (MaterialAllowedRule, the bead dialog) and "may this material go on a body carrying this SPEC?"
         // (this provider, the material dialog).
         var spec = Spec("B1005010-1", "2024-O", "7075-T6");
-        var grade = GradeMap.GradeFor(materialName)!;
+        var grade = Table.GradeForPhysicalMaterial(materialName)!;
 
         var specDirection = new MaterialAllowedRule().Evaluate(new BeadValidationContext(
             new SheetMetalProfile(BodyId, "SM_BODY", Thickness: 0.02, MaterialGradeLabel: grade), spec));

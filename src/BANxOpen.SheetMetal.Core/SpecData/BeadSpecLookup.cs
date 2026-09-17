@@ -5,16 +5,16 @@ namespace BANxOpen.SheetMetal.SpecData;
 /// <summary>Resolves SPECs for the constraint provider and for identifying unstamped beads.
 ///
 /// Its own seam because the provider needs exactly this and nothing else. Depending on
-/// <see cref="BeadSpecCache"/> directly would make the provider untestable without a registry and a workbook
+/// <see cref="BeadSpecCache"/> directly would make the provider untestable without a standards file and a workbook
 /// on disk.</summary>
 public interface IBeadSpecLookup
 {
     /// <summary>The row for this Standard and SPEC, or null when it cannot be found — the SPEC was retired
-    /// from its workbook after parts were built to it, the Standard left the registry, or the spec data could
+    /// from its workbook after parts were built to it, the Standard left the sheet metal material standards file, or the spec data could
     /// not be read at all. Callers must treat null as "unverifiable", not "unrestricted".</summary>
     BeadSpecRow? Find(string standardId, string specId);
 
-    /// <summary>Every row in every registered Standard. An unstamped bead records no Standard, so identifying
+    /// <summary>Every row in every Standard in the sheet metal material standards file. An unstamped bead records no Standard, so identifying
     /// it means searching all of them. A Standard whose workbook cannot be read is skipped with a warning
     /// rather than failing the whole search.</summary>
     IReadOnlyList<BeadSpecRow> AllSpecs();
@@ -64,7 +64,7 @@ public sealed class BeadSpecLookup : IBeadSpecLookup
         }
         catch (Exception ex) when (IsSpecDataFailure(ex))
         {
-            _onWarning?.Invoke($"Could not read the standards registry while identifying unstamped beads: {ex.Message}");
+            _onWarning?.Invoke($"Could not list the Standards while identifying unstamped beads: {ex.Message}");
             return Array.Empty<BeadSpecRow>();
         }
 

@@ -9,10 +9,13 @@ public class BeadSpecCacheTests
     {
         public int ReadCount { get; private set; }
         public double NextThickness { get; set; } = 0.02;
+        public string? Workbook { get; set; }
 
         public IReadOnlyList<StandardInfo> ListStandards() => throw new NotSupportedException();
 
-        public IReadOnlyList<BeadSpecRow> ReadWorkbook(StandardInfo standard)
+        public string? FindWorkbook(StandardInfo standard) => Workbook;
+
+        public IReadOnlyList<BeadSpecRow> ReadWorkbook(StandardInfo standard, string workbookPath)
         {
             ReadCount++;
             return new[]
@@ -23,28 +26,23 @@ public class BeadSpecCacheTests
         }
     }
 
-    private static (string WorkbookPath, string CacheDir) MakeTempPaths()
+    private static readonly StandardInfo Standard = new("B1005010", "B1005010", "unused");
+
+    private static string TempWorkbook()
     {
         var workbookPath = Path.Combine(Path.GetTempPath(), $"wb-{Guid.NewGuid():N}.xlsx");
         File.WriteAllText(workbookPath, "placeholder");
+        return workbookPath;
+    }
+
+    private static void WithCache(Action<FakeSource, BeadSpecCache, string> test)
+    {
+        var workbookPath = TempWorkbook();
         var cacheDir = Path.Combine(Path.GetTempPath(), $"cache-{Guid.NewGuid():N}");
-        return (workbookPath, cacheDir);
-    }
-
-    [Fact]
-    public void GetSpecs_SecondCallWithUnchangedWorkbook_DoesNotReimport()
-    {
-        var (workbookPath, cacheDir) = MakeTempPaths();
         try
         {
-            var source = new FakeSource();
-            var cache = new BeadSpecCache(source, cacheDir);
-            var standard = new StandardInfo("B1005010", "B1005010", workbookPath);
-
-            cache.GetSpecs(standard);
-            cache.GetSpecs(standard);
-
-            Assert.Equal(1, source.ReadCount);
+            var source = new FakeSource { Workbook = workbookPath };
+            test(source, new BeadSpecCache(source, cacheDir), workbookPath);
         }
         finally
         {
@@ -54,47 +52,60 @@ public class BeadSpecCacheTests
     }
 
     [Fact]
-    public void GetSpecs_AfterWorkbookModified_Reimports()
+    public void GetSpecs_SecondCallWithUnchangedWorkbook_DoesNotReimport() => WithCache((source, cache, _) =>
     {
-        var (workbookPath, cacheDir) = MakeTempPaths();
-        try
-        {
-            var source = new FakeSource();
-            var cache = new BeadSpecCache(source, cacheDir);
-            var standard = new StandardInfo("B1005010", "B1005010", workbookPath);
+        cache.GetSpecs(Standard);
+        cache.GetSpecs(Standard);
 
-            cache.GetSpecs(standard);
-            File.SetLastWriteTimeUtc(workbookPath, DateTime.UtcNow.AddMinutes(5));
-            cache.GetSpecs(standard);
-
-            Assert.Equal(2, source.ReadCount);
-        }
-        finally
-        {
-            File.Delete(workbookPath);
-            Directory.Delete(cacheDir, recursive: true);
-        }
-    }
+        Assert.Equal(1, source.ReadCount);
+    });
 
     [Fact]
-    public void Refresh_AlwaysReimportsRegardlessOfCache()
+    public void GetSpecs_AfterWorkbookModified_Reimports() => WithCache((source, cache, workbookPath) =>
     {
-        var (workbookPath, cacheDir) = MakeTempPaths();
+        cache.GetSpecs(Standard);
+        File.SetLastWriteTimeUtc(workbookPath, DateTime.UtcNow.AddMinutes(5));
+        cache.GetSpecs(Standard);
+
+        Assert.Equal(2, source.ReadCount);
+    });
+
+    [Fact]
+    public void GetSpecs_AfterTheStandardFolderHoldsADifferentWorkbook_Reimports() => WithCache((source, cache, workbookPath) =>
+    {
+        cache.GetSpecs(Standard);
+
+        var replacement = TempWorkbook();
         try
         {
-            var source = new FakeSource();
-            var cache = new BeadSpecCache(source, cacheDir);
-            var standard = new StandardInfo("B1005010", "B1005010", workbookPath);
-
-            cache.GetSpecs(standard);
-            cache.Refresh(standard);
-
-            Assert.Equal(2, source.ReadCount);
+            File.SetLastWriteTimeUtc(replacement, File.GetLastWriteTimeUtc(workbookPath));
+            source.Workbook = replacement;
+            cache.GetSpecs(Standard);
         }
         finally
         {
-            File.Delete(workbookPath);
-            Directory.Delete(cacheDir, recursive: true);
+            File.Delete(replacement);
         }
-    }
+
+        Assert.Equal(2, source.ReadCount);
+    });
+
+    [Fact]
+    public void GetSpecs_ForAStandardWithNoWorkbook_IsEmptyAndReadsNothing() => WithCache((source, cache, _) =>
+    {
+        source.Workbook = null;
+
+        Assert.Empty(cache.GetSpecs(Standard));
+        Assert.Empty(cache.Refresh(Standard));
+        Assert.Equal(0, source.ReadCount);
+    });
+
+    [Fact]
+    public void Refresh_AlwaysReimportsRegardlessOfCache() => WithCache((source, cache, _) =>
+    {
+        cache.GetSpecs(Standard);
+        cache.Refresh(Standard);
+
+        Assert.Equal(2, source.ReadCount);
+    });
 }

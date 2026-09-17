@@ -2,13 +2,13 @@ using System.Reflection;
 
 namespace BANxOpen.SheetMetal.Common;
 
-/// <summary>Finds this library's configuration directory (standards.json, material-grade-map.json,
-/// bead-settings.json, and the generated cache\ beneath it).
+/// <summary>Finds this library's configuration directory (sheetmetal-settings.json, bead-settings.json, and the
+/// generated cache\ beneath it). Materials, grades and Standards are not configured here: they come from NX's sheet
+/// metal material standards file (see <c>SheetMetalMaterialTable</c>).
 ///
 /// It has to be resolved rather than passed in by a caller, because more than one entry point reads it: the
-/// bead dialog reads the standards registry, and the Material Assignment dialog reads the grade map through
-/// the bead constraint provider. Two entry points hardcoding their own relative path is how they end up
-/// reading two different copies.
+/// bead dialog and the Material Assignment dialog both build their sheet metal rules from it. Two entry points
+/// hardcoding their own relative path is how they end up reading two different copies.
 ///
 /// Resolution order, per the coding-conventions skill's non-negotiable #4 (no hardcoded install paths):
 ///   1. %BANXOPEN_SHEETMETAL_CONFIG%, so a deployment can put config anywhere.
@@ -17,15 +17,15 @@ namespace BANxOpen.SheetMetal.Common;
 ///      The second finds this repo's config from any dialog built in a sibling repo, which is the layout
 ///      the cross-repo project references already require — so a dev build needs no setup.
 ///
-/// A folder only counts if it holds material-grade-map.json, which every consumer needs. Without that check
-/// the upward search would take the first unrelated folder that happens to be called "config".</summary>
+/// A folder only counts if it holds sheetmetal-settings.json, which marks it as this library's config. Without that
+/// check the upward search would take the first unrelated folder that happens to be called "config".</summary>
 public static class SheetMetalConfigLocator
 {
     public const string EnvironmentVariable = "BANXOPEN_SHEETMETAL_CONFIG";
 
     private const string ConfigFolderName = "config";
     private const string RepoFolderName = "BANxOpen.SheetMetal";
-    private const string MarkerFileName = "material-grade-map.json";
+    private const string MarkerFileName = "sheetmetal-settings.json";
 
     /// <summary>The configuration directory. Does not verify the other files inside it exist — callers
     /// report a missing file far more usefully than this can.</summary>
@@ -72,9 +72,8 @@ public static class SheetMetalConfigLocator
             $"Tried: {string.Join("; ", attempted)}. Set {EnvironmentVariable} to that folder.");
     }
 
-    public static string StandardsRegistryPath() => Path.Combine(Locate(), "standards.json");
-
-    public static string MaterialGradeMapPath() => Path.Combine(Locate(), MarkerFileName);
+    /// <summary>See <see cref="SheetMetalSettings.Load"/>.</summary>
+    public static string SettingsPath() => Path.Combine(Locate(), MarkerFileName);
 
     /// <summary>Optional: a missing file means default settings. See <c>BeadSettings.Load</c>.</summary>
     public static string BeadSettingsPath() => Path.Combine(Locate(), "bead-settings.json");

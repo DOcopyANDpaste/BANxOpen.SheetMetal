@@ -24,7 +24,7 @@ public class SheetMetalConfigLocatorTests : IDisposable
     private string ConfigAt(params string[] parts)
     {
         var dir = Dir(parts);
-        File.WriteAllText(Path.Combine(dir, "material-grade-map.json"), "{}");
+        File.WriteAllText(Path.Combine(dir, "sheetmetal-settings.json"), "{}");
         return dir;
     }
 
@@ -59,7 +59,7 @@ public class SheetMetalConfigLocatorTests : IDisposable
     [Fact]
     public void Ignores_an_unrelated_folder_called_config()
     {
-        Dir("NXOPEN.Material", "config"); // no grade map: somebody else's config
+        Dir("NXOPEN.Material", "config"); // no settings file: somebody else's config
         var real = ConfigAt("BANxOpen.SheetMetal", "config");
         var bin = Dir("NXOPEN.Material", "BANxOpen.Ui.MaterialAssignment", "bin", "Debug", "net48");
 

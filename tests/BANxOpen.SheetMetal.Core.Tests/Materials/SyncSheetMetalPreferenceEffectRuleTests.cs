@@ -8,10 +8,7 @@ namespace BANxOpen.SheetMetal.Tests.Materials;
 
 public class SyncSheetMetalPreferenceEffectRuleTests
 {
-    private static readonly MaterialGradeMap GradeMap = MaterialGradeMap.FromEntries(new Dictionary<string, string>
-    {
-        ["Aluminum 2024-O"] = "2024-O",
-    });
+    private static readonly SheetMetalMaterialTable Table = TableRows.AluminumTable();
 
     private static BodyInfo Body(BodyKind kind) =>
         new(new BodyId("body-1"), "BODY", kind, Volume: 0.0, Attributes: new Dictionary<string, string>());
@@ -24,18 +21,19 @@ public class SyncSheetMetalPreferenceEffectRuleTests
     private static IReadOnlyList<SideEffectInstruction> Effects(BodyKind kind, string materialName)
     {
         var body = Body(kind);
-        return new SyncSheetMetalPreferenceEffectRule(GradeMap).GenerateEffects(
+        return new SyncSheetMetalPreferenceEffectRule(Table).GenerateEffects(
             new MaterialAssignmentRuleContext(MakeMaterial(materialName), body, null, new[] { body }));
     }
 
     [Fact]
-    public void A_mapped_material_on_a_sheet_metal_body_syncs_its_grade()
+    public void A_material_on_a_sheet_metal_body_syncs_its_first_row_in_file_order()
     {
+        // "Aluminum 2024-O" has two rows; the first listed is the one set until the user can pick (phase 2).
         var instruction = Assert.Single(Effects(BodyKind.SheetMetal, "Aluminum 2024-O"));
 
         Assert.Equal(SyncSheetMetalPreferenceEffectRule.InstructionType, instruction.InstructionType);
         Assert.Equal(new BodyId("body-1"), instruction.BodyId);
-        Assert.Equal("2024-O", instruction.Data[SyncSheetMetalPreferenceEffectRule.GradeLabelDataKey]);
+        Assert.Equal("2024-O_0.020", instruction.Data[SyncSheetMetalPreferenceEffectRule.MaterialNameDataKey]);
     }
 
     [Theory]
@@ -48,7 +46,7 @@ public class SyncSheetMetalPreferenceEffectRuleTests
     }
 
     [Fact]
-    public void An_unmapped_material_syncs_nothing()
+    public void A_material_with_no_row_syncs_nothing()
     {
         Assert.Empty(Effects(BodyKind.SheetMetal, "Titanium Grade 5"));
     }
@@ -59,6 +57,6 @@ public class SyncSheetMetalPreferenceEffectRuleTests
         // The material engine checks every declared type has an executor; an undeclared one would slip past it.
         Assert.Equal(
             new[] { SyncSheetMetalPreferenceEffectRule.InstructionType },
-            new SyncSheetMetalPreferenceEffectRule(GradeMap).InstructionTypes);
+            new SyncSheetMetalPreferenceEffectRule(Table).InstructionTypes);
     }
 }
