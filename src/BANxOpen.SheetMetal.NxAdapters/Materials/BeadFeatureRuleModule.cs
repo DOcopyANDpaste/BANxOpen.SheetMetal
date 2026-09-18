@@ -1,4 +1,5 @@
 using BANxOpen.Foundation.Core.Materials.Assignment;
+using BANxOpen.Foundation.Core.Materials.Assignment.Choices;
 using BANxOpen.Foundation.Core.Materials.Rules.Features;
 using BANxOpen.Foundation.NxAdapters.Materials;
 using BANxOpen.SheetMetal.Materials;
@@ -18,6 +19,8 @@ public sealed class BeadFeatureRuleModule : INxMaterialRuleModule
     public IReadOnlyList<IMaterialValidationRule> ValidationRules => Array.Empty<IMaterialValidationRule>();
 
     public IReadOnlyList<IFeatureMaterialConstraintProvider> FeatureConstraints { get; }
+
+    public IReadOnlyList<IAssignmentChoiceProvider> ChoiceProviders => Array.Empty<IAssignmentChoiceProvider>();
 
     public IReadOnlyList<IPostAssignmentEffectRule> SideEffectRules => Array.Empty<IPostAssignmentEffectRule>();
 

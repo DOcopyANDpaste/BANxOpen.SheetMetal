@@ -91,7 +91,7 @@ public class BeadSettingsTests : IDisposable
     [Fact]
     public void SpecValueFor_reads_the_configured_column()
     {
-        var row = new BeadSpecRow("S", "S-1", RadiusAndRadS: 0.2, Width: 0.9, Height: 0.6, DieRadiusP: 0.1,
+        var row = new BeadSpecRow("S", "S", "S-1", RadiusAndRadS: 0.2, Width: 0.9, Height: 0.6, DieRadiusP: 0.1,
             Thickness: 0.02, AllowedMaterialGrades: new Dictionary<string, bool>());
 
         Assert.Equal(0.6, BeadSettings.Default.SpecValueFor(row, BeadFeatureParameter.Height));

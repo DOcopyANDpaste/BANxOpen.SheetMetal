@@ -9,11 +9,16 @@ namespace BANxOpen.SheetMetal.Beads;
 /// resolved to a *pattern instance* of a Bead feature rather than the originally-created one — the instance
 /// itself carries no attribute stamp (patterning doesn't copy custom attributes onto members), so the
 /// stamp/SPEC reported here was read off the pattern's original member instead. Best-guess behavior per a
-/// live NX check still pending: <c>NxAdapters.SheetMetal.BeadTracebackService</c>.</summary>
+/// live NX check still pending: <c>NxAdapters.SheetMetal.BeadTracebackService</c>.
+///
+/// <see cref="BeadSpec"/> is null for a bead stamped before the bead SPEC name was recorded — the stamp is still
+/// valid, it just does not say which of the Standard's bead SPECs the row came from, and the caller looks that up
+/// from <see cref="SpecId"/> instead. It is never the reason a bead is treated as unstamped.</summary>
 public sealed record BeadTracebackResult(
     bool Found,
     bool HasUnstampedFeature,
     string? StandardId,
     string? SpecId,
     DateTime? CreatedUtc,
-    bool IsPatternInstance = false);
+    bool IsPatternInstance = false,
+    string? BeadSpec = null);

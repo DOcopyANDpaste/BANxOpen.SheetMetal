@@ -18,7 +18,9 @@ public sealed class ExcelBeadSpecParser
     private static readonly string[] DieRadiusAliases = { "RADP" };
     private static readonly string[] ThicknessAliases = { "THICKNESS", "TICHKNESS" };
 
-    public IReadOnlyList<BeadSpecRow> Parse(string standardId, Stream workbookStream)
+    /// <param name="workbookName">Tagged onto every row as <see cref="BeadSpecRow.WorkbookName"/>, so a row still
+    /// says which of a Standard's bead SPEC workbooks it came from once rows from several are in one list.</param>
+    public IReadOnlyList<BeadSpecRow> Parse(string standardId, string workbookName, Stream workbookStream)
     {
         using var workbook = new XLWorkbook(workbookStream);
         var sheet = workbook.Worksheets.First();
@@ -63,6 +65,7 @@ public sealed class ExcelBeadSpecParser
 
             rows.Add(new BeadSpecRow(
                 standardId,
+                workbookName,
                 sheet.Cell(row, specCol).GetString().Trim(),
                 sheet.Cell(row, radiusCol).GetDouble(),
                 sheet.Cell(row, widthCol).GetDouble(),

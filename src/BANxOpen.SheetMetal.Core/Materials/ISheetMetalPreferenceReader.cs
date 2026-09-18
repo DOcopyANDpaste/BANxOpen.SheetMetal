@@ -10,11 +10,23 @@ namespace BANxOpen.SheetMetal.Materials;
 /// <param name="ReadError">Set when the body is sheet metal but its preferences could not be read. Distinct from
 /// "not sheet metal": "could not look" must not be mistaken for "nothing to enforce", or the restriction silently
 /// lifts.</param>
-public sealed record SheetMetalPreferenceRead(bool IsSheetMetalBody, SheetMetalPartPreference? Preference, string? ReadError = null)
+/// <param name="BodyThickness">The body's own measured thickness in part units, from
+/// <c>SheetmetalManager.GetBodyThickness</c>. Null when the body is not sheet metal or NX would not report it.
+///
+/// Distinct from <see cref="SheetMetalPartPreference.Thickness"/>, which is what the preferences <em>say</em> the
+/// material is: the two disagreeing is exactly the mismatch <see cref="SheetMetalPreferenceCheck"/> reports. The
+/// body's own value travels with the read because <c>SheetMetalRowChoiceProvider</c> marks the rows that match
+/// it, and asking NX for it a second time from another layer could get a different answer.</param>
+public sealed record SheetMetalPreferenceRead(
+    bool IsSheetMetalBody,
+    SheetMetalPartPreference? Preference,
+    string? ReadError = null,
+    double? BodyThickness = null)
 {
     public static readonly SheetMetalPreferenceRead NotSheetMetal = new(false, null);
 
-    public static SheetMetalPreferenceRead Of(SheetMetalPartPreference preference) => new(true, preference);
+    public static SheetMetalPreferenceRead Of(SheetMetalPartPreference preference, double? bodyThickness = null) =>
+        new(true, preference, null, bodyThickness);
 
     public static SheetMetalPreferenceRead Unreadable(string error) => new(true, null, error);
 }

@@ -5,24 +5,44 @@ namespace BANxOpen.SheetMetal.Tests.SpecData;
 
 public class BeadSpecCacheTests
 {
+    private const string BeadSpec = "B1005010";
+
     private sealed class FakeSource : IBeadSpecSource
     {
         public int ReadCount { get; private set; }
         public double NextThickness { get; set; } = 0.02;
+
+        /// <summary>The workbook <see cref="BeadSpec"/> resolves to; null means the Standard has none for it.</summary>
         public string? Workbook { get; set; }
 
-        public IReadOnlyList<StandardInfo> ListStandards() => throw new NotSupportedException();
+        /// <summary>Extra workbooks the Standard holds, which only <c>GetAllSpecs</c> reaches.</summary>
+        public List<string> OtherWorkbooks { get; } = new();
 
-        public string? FindWorkbook(StandardInfo standard) => Workbook;
+        /// <summary>Workbooks that fail to read, as a malformed or locked one does.</summary>
+        public HashSet<string> Unreadable { get; } = new();
+
+        /// <summary>How many times each workbook lists SPEC-1.</summary>
+        public int RowsPerWorkbook { get; set; } = 1;
+
+        public IReadOnlyList<StandardInfo> ListStandards() => new[] { Standard };
+
+        public string? FindWorkbook(StandardInfo standard, string beadSpecName) =>
+            beadSpecName == BeadSpec ? Workbook : null;
+
+        public IReadOnlyList<string> ListWorkbooks(StandardInfo standard) =>
+            (Workbook is null ? OtherWorkbooks : OtherWorkbooks.Prepend(Workbook)).ToList();
 
         public IReadOnlyList<BeadSpecRow> ReadWorkbook(StandardInfo standard, string workbookPath)
         {
             ReadCount++;
-            return new[]
-            {
-                new BeadSpecRow(standard.Id, "SPEC-1", 0.245, 0.625, 0.625, 0.188, NextThickness,
-                    new Dictionary<string, bool> { ["2024-O"] = true }),
-            };
+            if (Unreadable.Contains(workbookPath))
+                throw new InvalidDataException($"'{workbookPath}' is not a valid bead SPEC workbook.");
+
+            return Enumerable.Range(0, RowsPerWorkbook)
+                .Select(_ => new BeadSpecRow(standard.Id, Path.GetFileNameWithoutExtension(workbookPath), "SPEC-1",
+                    0.245, 0.625, 0.625, 0.188, NextThickness,
+                    new Dictionary<string, bool> { ["2024-O"] = true }))
+                .ToList();
         }
     }
 
@@ -54,8 +74,8 @@ public class BeadSpecCacheTests
     [Fact]
     public void GetSpecs_SecondCallWithUnchangedWorkbook_DoesNotReimport() => WithCache((source, cache, _) =>
     {
-        cache.GetSpecs(Standard);
-        cache.GetSpecs(Standard);
+        cache.GetSpecs(Standard, BeadSpec);
+        cache.GetSpecs(Standard, BeadSpec);
 
         Assert.Equal(1, source.ReadCount);
     });
@@ -63,9 +83,9 @@ public class BeadSpecCacheTests
     [Fact]
     public void GetSpecs_AfterWorkbookModified_Reimports() => WithCache((source, cache, workbookPath) =>
     {
-        cache.GetSpecs(Standard);
+        cache.GetSpecs(Standard, BeadSpec);
         File.SetLastWriteTimeUtc(workbookPath, DateTime.UtcNow.AddMinutes(5));
-        cache.GetSpecs(Standard);
+        cache.GetSpecs(Standard, BeadSpec);
 
         Assert.Equal(2, source.ReadCount);
     });
@@ -73,14 +93,14 @@ public class BeadSpecCacheTests
     [Fact]
     public void GetSpecs_AfterTheStandardFolderHoldsADifferentWorkbook_Reimports() => WithCache((source, cache, workbookPath) =>
     {
-        cache.GetSpecs(Standard);
+        cache.GetSpecs(Standard, BeadSpec);
 
         var replacement = TempWorkbook();
         try
         {
             File.SetLastWriteTimeUtc(replacement, File.GetLastWriteTimeUtc(workbookPath));
             source.Workbook = replacement;
-            cache.GetSpecs(Standard);
+            cache.GetSpecs(Standard, BeadSpec);
         }
         finally
         {
@@ -95,17 +115,159 @@ public class BeadSpecCacheTests
     {
         source.Workbook = null;
 
-        Assert.Empty(cache.GetSpecs(Standard));
-        Assert.Empty(cache.Refresh(Standard));
+        Assert.Empty(cache.GetSpecs(Standard, BeadSpec));
+        Assert.Empty(cache.Refresh(Standard, BeadSpec));
         Assert.Equal(0, source.ReadCount);
     });
 
     [Fact]
     public void Refresh_AlwaysReimportsRegardlessOfCache() => WithCache((source, cache, _) =>
     {
-        cache.GetSpecs(Standard);
-        cache.Refresh(Standard);
+        cache.GetSpecs(Standard, BeadSpec);
+        cache.Refresh(Standard, BeadSpec);
 
         Assert.Equal(2, source.ReadCount);
+    });
+
+    [Fact]
+    public void GetSpecs_ForASpecNoWorkbookIsNamedFor_IsEmpty() => WithCache((source, cache, _) =>
+    {
+        Assert.Empty(cache.GetSpecs(Standard, "S5010"));
+        Assert.Equal(0, source.ReadCount);
+    });
+
+    [Fact]
+    public void GetAllSpecs_ReadsEveryWorkbookTheStandardHolds() => WithCache((source, cache, _) =>
+    {
+        var other = TempWorkbook();
+        try
+        {
+            source.OtherWorkbooks.Add(other);
+
+            var rows = cache.GetAllSpecs(Standard);
+
+            Assert.Equal(2, rows.Count);
+            Assert.Equal(2, source.ReadCount);
+        }
+        finally
+        {
+            File.Delete(other);
+        }
+    });
+
+    [Fact]
+    public void GetAllSpecs_CachesEachWorkbookSeparately() => WithCache((source, cache, _) =>
+    {
+        var other = TempWorkbook();
+        try
+        {
+            source.OtherWorkbooks.Add(other);
+
+            cache.GetAllSpecs(Standard);
+            cache.GetAllSpecs(Standard);
+
+            // Two workbooks, read once each — one cache file per workbook, not one per Standard that the
+            // second workbook would keep overwriting.
+            Assert.Equal(2, source.ReadCount);
+        }
+        finally
+        {
+            File.Delete(other);
+        }
+    });
+
+    [Fact]
+    public void GetAllSpecs_WarnsWhenTwoWorkbooksShareASpecId()
+    {
+        var workbookPath = TempWorkbook();
+        var other = TempWorkbook();
+        var cacheDir = Path.Combine(Path.GetTempPath(), $"cache-{Guid.NewGuid():N}");
+        var warnings = new List<string>();
+        try
+        {
+            var source = new FakeSource { Workbook = workbookPath };
+            source.OtherWorkbooks.Add(other);
+
+            // FakeSource gives every workbook a row called SPEC-1, so the two collide.
+            new BeadSpecCache(source, cacheDir, warnings.Add).GetAllSpecs(Standard);
+
+            var warning = Assert.Single(warnings);
+            Assert.Contains("SPEC-1", warning);
+            Assert.Contains(Path.GetFileNameWithoutExtension(workbookPath), warning);
+            Assert.Contains(Path.GetFileNameWithoutExtension(other), warning);
+        }
+        finally
+        {
+            File.Delete(workbookPath);
+            File.Delete(other);
+            Directory.Delete(cacheDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void GetAllSpecs_DoesNotWarnWhenSpecIdsAreUnique() => WithCache((_, cache, _) =>
+    {
+        // One workbook, so nothing to collide with. WithCache passes no warning sink; this asserts the
+        // happy path does not need one.
+        Assert.Single(cache.GetAllSpecs(Standard));
+    });
+
+    [Fact]
+    public void GetAllSpecs_SkipsAnUnreadableWorkbookAndKeepsTheRest() => WithCache((source, cache, workbookPath) =>
+    {
+        var bad = TempWorkbook();
+        try
+        {
+            source.OtherWorkbooks.Add(bad);
+            source.Unreadable.Add(bad);
+
+            var row = Assert.Single(cache.GetAllSpecs(Standard));
+            Assert.Equal(Path.GetFileNameWithoutExtension(workbookPath), row.WorkbookName);
+        }
+        finally
+        {
+            File.Delete(bad);
+        }
+    });
+
+    [Fact]
+    public void Lookup_ResolvesASpecRepeatedWithinOneWorkbookToItsFirstRow() => WithCache((source, cache, _) =>
+    {
+        source.RowsPerWorkbook = 2;
+
+        Assert.NotNull(new BeadSpecLookup(cache).Find(Standard.Id, "SPEC-1"));
+    });
+
+    [Fact]
+    public void Lookup_DoesNotResolveASpecClaimedByTwoWorkbooks() => WithCache((source, cache, _) =>
+    {
+        var other = TempWorkbook();
+        try
+        {
+            source.OtherWorkbooks.Add(other);
+
+            Assert.Null(new BeadSpecLookup(cache).Find(Standard.Id, "SPEC-1"));
+        }
+        finally
+        {
+            File.Delete(other);
+        }
+    });
+
+    [Fact]
+    public void Lookup_StillFindsASpecWhenAnotherWorkbookIsUnreadable() => WithCache((source, cache, _) =>
+    {
+        var bad = TempWorkbook();
+        try
+        {
+            source.OtherWorkbooks.Add(bad);
+            source.Unreadable.Add(bad);
+
+            Assert.NotNull(new BeadSpecLookup(cache).Find(Standard.Id, "SPEC-1"));
+        }
+        finally
+        {
+            File.Delete(bad);
+        }
     });
 }

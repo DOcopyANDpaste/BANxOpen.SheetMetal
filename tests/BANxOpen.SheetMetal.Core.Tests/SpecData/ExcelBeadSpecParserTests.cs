@@ -58,12 +58,13 @@ public class ExcelBeadSpecParserTests
         using var stream = BuildSampleWorkbook();
         var parser = new ExcelBeadSpecParser();
 
-        var rows = parser.Parse("B1005010", stream);
+        var rows = parser.Parse("B1005010", "B1005010", stream);
 
         Assert.Equal(2, rows.Count);
 
         var first = rows[0];
         Assert.Equal("B1005010", first.StandardId);
+        Assert.Equal("B1005010", first.WorkbookName);
         Assert.Equal("B1005010-1", first.SpecId);
         Assert.Equal(0.245, first.RadiusAndRadS);
         Assert.Equal(0.625, first.Width);
@@ -93,7 +94,7 @@ public class ExcelBeadSpecParserTests
 
         var parser = new ExcelBeadSpecParser();
 
-        var ex = Assert.Throws<InvalidDataException>(() => parser.Parse("B1005010", stream));
+        var ex = Assert.Throws<InvalidDataException>(() => parser.Parse("B1005010", "B1005010", stream));
         Assert.Contains("THICKNESS", ex.Message);
     }
 }

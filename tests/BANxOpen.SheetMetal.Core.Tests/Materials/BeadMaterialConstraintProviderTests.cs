@@ -27,7 +27,7 @@ public class BeadMaterialConstraintProviderTests
         string specId, string[] allowedGrades,
         double height = 0.625, double radius = 0.245, double dieRadius = 0.188, double thickness = 0.02,
         double width = 0.625) =>
-        new("B1005010", specId,
+        new("B1005010", "B1005010", specId,
             RadiusAndRadS: radius, Width: width, Height: height, DieRadiusP: dieRadius, Thickness: thickness,
             AllowedMaterialGrades: new Dictionary<string, bool>
             {

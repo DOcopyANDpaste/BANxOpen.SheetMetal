@@ -3,8 +3,14 @@ namespace BANxOpen.SheetMetal.Beads;
 /// <summary>One row of a Standard's SPEC workbook — the driving parameters for one Bead SPEC, plus which
 /// material grades it's allowed on. Column names below match the Excel headers verbatim so the parser and
 /// the domain model read the same vocabulary.</summary>
+/// <param name="WorkbookName">The file stem of the workbook this row was read from. A Standard holds one
+/// workbook per bead SPEC (see <c>StandardFolderLayout</c>), so this says which of them a row belongs to —
+/// needed because two workbooks under one Standard could otherwise contribute rows that look identical.
+/// It is provenance, not an identifier the business owns: the UI's bead SPEC name is matched to it by the
+/// same "the file name contains the SPEC name" rule the workbook was found by.</param>
 public sealed record BeadSpecRow(
     string StandardId,
+    string WorkbookName,
     string SpecId,
     double RadiusAndRadS,
     double Width,

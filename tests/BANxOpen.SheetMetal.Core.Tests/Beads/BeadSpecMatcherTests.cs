@@ -6,9 +6,10 @@ public class BeadSpecMatcherTests
 {
     private static BeadSpecRow Row(
         string specId, double height = 0.625, double radius = 0.245, double dieRadius = 0.188,
-        double thickness = 0.02, double width = 0.625, string standardId = "B1005010") =>
-        new(standardId, specId, RadiusAndRadS: radius, Width: width, Height: height, DieRadiusP: dieRadius,
-            Thickness: thickness, AllowedMaterialGrades: new Dictionary<string, bool>());
+        double thickness = 0.02, double width = 0.625, string standardId = "B1005010",
+        string workbookName = "B1005010") =>
+        new(standardId, workbookName, specId, RadiusAndRadS: radius, Width: width, Height: height,
+            DieRadiusP: dieRadius, Thickness: thickness, AllowedMaterialGrades: new Dictionary<string, bool>());
 
     private static BeadGeometry Geometry(BeadSpecRow row) => new(row.Thickness, row.Height, row.RadiusAndRadS, row.DieRadiusP);
 
@@ -103,6 +104,36 @@ public class BeadSpecMatcherTests
         var match = BeadSpecMatcher.Match(Geometry(row) with { Height = 0.9 }, new[] { row }, settings);
 
         Assert.Same(row, match.Single);
+    }
+
+    [Fact]
+    public void The_same_row_reached_through_two_Standards_is_one_SPEC_not_an_ambiguity()
+    {
+        var row = Row("B1005010-1");
+        var sameRowOtherStandard = row with { StandardId = "YY_Standard" };
+
+        var match = BeadSpecMatcher.Match(Geometry(row), new[] { row, sameRowOtherStandard }, BeadSettings.Default);
+
+        // Two Standards, so two keys — but each is a distinct SPEC the caller must choose between, which is
+        // what being ambiguous means. The de-dupe is about the SAME (Standard, workbook, SPEC) arriving twice.
+        Assert.True(match.IsAmbiguous);
+
+        var duplicated = BeadSpecMatcher.Match(Geometry(row), new[] { row, row with { } }, BeadSettings.Default);
+        Assert.Same(row, duplicated.Single);
+    }
+
+    [Fact]
+    public void Two_workbooks_sharing_a_SPEC_id_are_ambiguous_not_silently_merged()
+    {
+        // SPEC ids are supposed to be unique within a Standard. If bad data breaks that, the two rows are
+        // genuinely different SPECs and must not collapse into one confident match.
+        var first = Row("B1005010-1", workbookName: "B1005010");
+        var second = Row("B1005010-1", workbookName: "S5010");
+
+        var match = BeadSpecMatcher.Match(Geometry(first), new[] { first, second }, BeadSettings.Default);
+
+        Assert.True(match.IsAmbiguous);
+        Assert.Equal(new[] { "B1005010", "S5010" }, match.Candidates.Select(c => c.WorkbookName).OrderBy(n => n));
     }
 
     [Fact]

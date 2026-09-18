@@ -11,12 +11,17 @@ public interface IBeadSpecLookup
 {
     /// <summary>The row for this Standard and SPEC, or null when it cannot be found — the SPEC was retired
     /// from its workbook after parts were built to it, the Standard left the sheet metal material standards file, or the spec data could
-    /// not be read at all. Callers must treat null as "unverifiable", not "unrestricted".</summary>
+    /// not be read at all. Callers must treat null as "unverifiable", not "unrestricted".
+    ///
+    /// Searches every bead SPEC workbook the Standard holds, since a stamp records the SPEC id but not which
+    /// workbook it came from. SPEC ids are expected to be unique across those workbooks; if one is not, this
+    /// returns null (with a warning) rather than picking whichever workbook was read first. A workbook that cannot be
+    /// read is skipped with a warning, so it does not make the Standard's other SPECs unverifiable.</summary>
     BeadSpecRow? Find(string standardId, string specId);
 
-    /// <summary>Every row in every Standard in the sheet metal material standards file. An unstamped bead records no Standard, so identifying
-    /// it means searching all of them. A Standard whose workbook cannot be read is skipped with a warning
-    /// rather than failing the whole search.</summary>
+    /// <summary>Every row of every bead SPEC workbook in every Standard in the sheet metal material standards file. An
+    /// unstamped bead records no Standard and no SPEC, so identifying it means searching all of them. A workbook, or a
+    /// whole Standard's folder, that cannot be read is skipped with a warning rather than failing the whole search.</summary>
     IReadOnlyList<BeadSpecRow> AllSpecs();
 }
 
@@ -42,10 +47,16 @@ public sealed class BeadSpecLookup : IBeadSpecLookup
             if (standard is null)
                 return null;
 
-            return _cache.GetSpecs(standard)
-                .FirstOrDefault(row => string.Equals(row.SpecId, specId, StringComparison.OrdinalIgnoreCase));
+            var matches = _cache.GetAllSpecs(standard)
+                .Where(row => string.Equals(row.SpecId, specId, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // Two workbooks claiming the same SPEC id is bad data, and either answer would be a guess. Reporting
+            // "not found" is the same answer a retired SPEC gets, and callers already treat that as unverifiable.
+            // GetAllSpecs has already warned about it. A SPEC repeated within one workbook resolves to its first row.
+            return BeadSpecCache.WorkbooksOf(matches).Count > 1 ? null : matches.FirstOrDefault();
         }
-        catch (Exception ex) when (IsSpecDataFailure(ex))
+        catch (Exception ex) when (BeadSpecCache.IsSpecDataFailure(ex))
         {
             // This runs inside an interactive dialog, so unreadable spec data must not take the dialog down.
             // Reporting "not found" is safe only because the provider turns that into a blocking constraint.
@@ -62,7 +73,7 @@ public sealed class BeadSpecLookup : IBeadSpecLookup
         {
             standards = _cache.ListStandards();
         }
-        catch (Exception ex) when (IsSpecDataFailure(ex))
+        catch (Exception ex) when (BeadSpecCache.IsSpecDataFailure(ex))
         {
             _onWarning?.Invoke($"Could not list the Standards while identifying unstamped beads: {ex.Message}");
             return Array.Empty<BeadSpecRow>();
@@ -73,9 +84,9 @@ public sealed class BeadSpecLookup : IBeadSpecLookup
         {
             try
             {
-                rows.AddRange(_cache.GetSpecs(standard));
+                rows.AddRange(_cache.GetAllSpecs(standard));
             }
-            catch (Exception ex) when (IsSpecDataFailure(ex))
+            catch (Exception ex) when (BeadSpecCache.IsSpecDataFailure(ex))
             {
                 _onWarning?.Invoke(
                     $"Skipped Standard '{standard.Id}' while identifying unstamped beads: {ex.Message}");
@@ -84,7 +95,4 @@ public sealed class BeadSpecLookup : IBeadSpecLookup
 
         return rows;
     }
-
-    private static bool IsSpecDataFailure(Exception ex) =>
-        ex is IOException or UnauthorizedAccessException or InvalidDataException;
 }

@@ -2,6 +2,7 @@ using BANxOpen.Foundation.Contracts.Bodies;
 using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.Foundation.Contracts.Materials;
 using BANxOpen.Foundation.Core.Materials.Assignment;
+using BANxOpen.Foundation.Core.Materials.Assignment.Choices;
 using BANxOpen.SheetMetal.Materials;
 
 namespace BANxOpen.SheetMetal.Tests.Materials;
@@ -18,22 +19,35 @@ public class SyncSheetMetalPreferenceEffectRuleTests
             new MaterialCategory("al", "Aluminum", new[] { "Aluminum" }),
             Array.Empty<MaterialPropertyValue>());
 
-    private static IReadOnlyList<SideEffectInstruction> Effects(BodyKind kind, string materialName)
+    /// <summary>The answer the row choice would have produced, injected directly — this rule's only input is
+    /// what came back from the choice, so the tests state it rather than going through the provider.</summary>
+    private static AssignmentChoiceAnswers Answer(string rowName) =>
+        AssignmentChoiceAnswers.CreateBuilder()
+            .AnswerDirectly(SheetMetalRowChoiceProvider.ChoiceIdentifier, new BodyId("body-1"), rowName)
+            .Build();
+
+    private static IReadOnlyList<SideEffectInstruction> Effects(
+        BodyKind kind, string materialName, AssignmentChoiceAnswers? answers = null)
     {
         var body = Body(kind);
-        return new SyncSheetMetalPreferenceEffectRule(Table).GenerateEffects(
-            new MaterialAssignmentRuleContext(MakeMaterial(materialName), body, null, new[] { body }));
+        var context = new MaterialAssignmentRuleContext(MakeMaterial(materialName), body, null, new[] { body })
+        {
+            ChoiceAnswers = answers ?? AssignmentChoiceAnswers.Empty,
+        };
+
+        return new SyncSheetMetalPreferenceEffectRule(Table).GenerateEffects(context);
     }
 
     [Fact]
-    public void A_material_on_a_sheet_metal_body_syncs_its_first_row_in_file_order()
+    public void A_sheet_metal_body_syncs_the_row_the_user_picked()
     {
-        // "Aluminum 2024-O" has two rows; the first listed is the one set until the user can pick (phase 2).
-        var instruction = Assert.Single(Effects(BodyKind.SheetMetal, "Aluminum 2024-O"));
+        // "Aluminum 2024-O" has two rows; the second is picked, so the second is what gets set — the rule has
+        // no opinion of its own about which row a material means.
+        var instruction = Assert.Single(Effects(BodyKind.SheetMetal, "Aluminum 2024-O", Answer("2024-O_0.032")));
 
         Assert.Equal(SyncSheetMetalPreferenceEffectRule.InstructionType, instruction.InstructionType);
         Assert.Equal(new BodyId("body-1"), instruction.BodyId);
-        Assert.Equal("2024-O_0.020", instruction.Data[SyncSheetMetalPreferenceEffectRule.MaterialNameDataKey]);
+        Assert.Equal("2024-O_0.032", instruction.Data[SyncSheetMetalPreferenceEffectRule.MaterialNameDataKey]);
     }
 
     [Theory]
@@ -42,13 +56,29 @@ public class SyncSheetMetalPreferenceEffectRuleTests
     [InlineData(BodyKind.Unknown)]
     public void A_body_that_is_not_sheet_metal_syncs_nothing(BodyKind kind)
     {
-        Assert.Empty(Effects(kind, "Aluminum 2024-O"));
+        Assert.Empty(Effects(kind, "Aluminum 2024-O", Answer("2024-O_0.020")));
     }
 
     [Fact]
-    public void A_material_with_no_row_syncs_nothing()
+    public void An_unanswered_choice_syncs_nothing_rather_than_guessing_a_row()
     {
-        Assert.Empty(Effects(BodyKind.SheetMetal, "Titanium Grade 5"));
+        // Not a fallback to the first row in file order: that was the phase 1 stand-in for asking the user, and
+        // reviving it here would let a caller that never collected the choice silently get it back.
+        Assert.Empty(Effects(BodyKind.SheetMetal, "Aluminum 2024-O"));
+    }
+
+    [Fact]
+    public void An_answer_naming_a_row_the_table_does_not_have_syncs_nothing()
+    {
+        Assert.Empty(Effects(BodyKind.SheetMetal, "Aluminum 2024-O", Answer("2024-O_0.125")));
+    }
+
+    [Fact]
+    public void An_answer_naming_a_row_of_another_material_syncs_nothing()
+    {
+        // The row question is shared by the part, so a batch assigning two materials can hand this body the
+        // answer given for the other one.
+        Assert.Empty(Effects(BodyKind.SheetMetal, "Aluminum 2024-O", Answer("5052-O_0.020")));
     }
 
     [Fact]

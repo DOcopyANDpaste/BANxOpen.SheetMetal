@@ -9,7 +9,7 @@ namespace BANxOpen.SheetMetal.Tests.Beads;
 public class BeadSpecValidatorTests
 {
     private static readonly BeadSpecRow ValidRow = new(
-        "B1005010", "B1005010-1",
+        "B1005010", "B1005010", "B1005010-1",
         RadiusAndRadS: 0.245, Width: 0.625, Height: 0.625, DieRadiusP: 0.188, Thickness: 0.02,
         AllowedMaterialGrades: new Dictionary<string, bool> { ["2024-O"] = true, ["5052-O"] = false });
 

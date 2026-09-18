@@ -22,8 +22,8 @@ public sealed record CurveTraceback(Feature? ExistingFeature, CoreBeads.BeadTrac
 ///
 /// BEST-GUESS AREAS — flagged for you to confirm/correct against a live NX session with an actual
 /// patterned bead:
-/// 1. <see cref="BeadFeatureTypeName"/> — "BEAD" is inferred from NX's short-code naming convention for
-///    sheet metal feature types, not confirmed against a live <c>Feature.FeatureType</c> value.
+/// 1. <see cref="BeadFeatureIdentity.FeatureTypeName"/> — "BEAD" is inferred from NX's short-code naming
+///    convention for sheet metal feature types, not confirmed against a live <c>Feature.FeatureType</c> value.
 /// 2. "The stamped sibling is the original" in <see cref="FindStampedPatternOriginal"/> — there is no
 ///    direct "get the pattern's seed feature" API in NXOpen; this infers it from which member happens to
 ///    carry the stamp, which only works because this tool is the one that wrote the stamp in the first
@@ -33,8 +33,6 @@ public sealed record CurveTraceback(Feature? ExistingFeature, CoreBeads.BeadTrac
 ///    independently re-editable in NX's model, not confirmed against a live pattern.</summary>
 public sealed class BeadTracebackService
 {
-    private const string BeadFeatureTypeName = "BEAD";
-
     private readonly NxSessionContext _context;
 
     public BeadTracebackService(NxSessionContext context) => _context = context;
@@ -63,8 +61,7 @@ public sealed class BeadTracebackService
         return new CurveTraceback(candidate, new CoreBeads.BeadTracebackResult(false, true, null, null, null));
     }
 
-    private static bool IsBeadFeature(Feature feature) =>
-        string.Equals(feature.FeatureType, BeadFeatureTypeName, StringComparison.OrdinalIgnoreCase);
+    private static bool IsBeadFeature(Feature feature) => BeadFeatureIdentity.IsBeadFeature(feature);
 
     private Feature? FindBeadFeatureUsingCurve(NXObject curve)
     {
@@ -152,6 +149,13 @@ public sealed class BeadTracebackService
         var standardId = feature.GetStringUserAttribute(BeadAttributeWriter.StandardIdAttribute, 0);
         var specId = feature.GetStringUserAttribute(BeadAttributeWriter.SpecIdAttribute, 0);
 
+        // Optional on purpose: a bead stamped before this attribute existed carries the Standard and the SPEC but
+        // not the bead SPEC name. That is still a complete stamp as far as Found is concerned — reporting it as
+        // unstamped would tell the user this tool did not build their own bead. The caller looks the SPEC id up.
+        var beadSpec = feature.HasUserAttribute(BeadAttributeWriter.BeadSpecAttribute, NXObject.AttributeType.String, 0)
+            ? feature.GetStringUserAttribute(BeadAttributeWriter.BeadSpecAttribute, 0)
+            : null;
+
         DateTime? createdUtc = null;
         if (feature.HasUserAttribute(BeadAttributeWriter.CreatedUtcAttribute, NXObject.AttributeType.String, 0) &&
             DateTime.TryParse(feature.GetStringUserAttribute(BeadAttributeWriter.CreatedUtcAttribute, 0), out var parsed))
@@ -159,6 +163,6 @@ public sealed class BeadTracebackService
             createdUtc = parsed;
         }
 
-        return new CoreBeads.BeadTracebackResult(true, false, standardId, specId, createdUtc);
+        return new CoreBeads.BeadTracebackResult(true, false, standardId, specId, createdUtc, BeadSpec: beadSpec);
     }
 }

@@ -9,8 +9,13 @@ public interface IBeadSpecSource
 {
     IReadOnlyList<StandardInfo> ListStandards();
 
-    /// <summary>The Standard's bead SPEC workbook, or null when the Standard has none.</summary>
-    string? FindWorkbook(StandardInfo standard);
+    /// <summary>The workbook holding <paramref name="beadSpecName"/>'s SPECs, or null when the Standard has none for
+    /// that SPEC.</summary>
+    string? FindWorkbook(StandardInfo standard, string beadSpecName);
+
+    /// <summary>Every bead SPEC workbook the Standard holds — for the searches that must read all of them rather than
+    /// one named SPEC's.</summary>
+    IReadOnlyList<string> ListWorkbooks(StandardInfo standard);
 
     IReadOnlyList<BeadSpecRow> ReadWorkbook(StandardInfo standard, string workbookPath);
 }

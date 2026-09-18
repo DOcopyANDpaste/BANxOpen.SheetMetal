@@ -16,9 +16,16 @@ public static class BeadAttributeWriter
     public const string StandardIdAttribute = "BEAD_STANDARD_ID";
     public const string SpecIdAttribute = "BEAD_SPEC_ID";
 
+    /// <summary>Which of the Standard's bead SPECs the row came from — the name the dialog offers, not the workbook's
+    /// file name, so a file rename or a revision suffix does not orphan a stamped bead.
+    ///
+    /// Added after the first release: beads stamped before it have the Standard and SPEC attributes but not this one,
+    /// so <c>BeadTracebackService</c> reads it as optional and the dialog falls back to looking the SPEC id up.</summary>
+    public const string BeadSpecAttribute = "BEAD_SPEC_NAME";
+
     private const string AppName = "NxSheetMetalBead";
 
-    public static void Stamp(Feature feature, string standardId, string specId, bool isNewFeature)
+    public static void Stamp(Feature feature, string standardId, string beadSpec, string specId, bool isNewFeature)
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0.0";
         var nowUtc = DateTime.UtcNow.ToString("O");
@@ -26,6 +33,7 @@ public static class BeadAttributeWriter
         feature.SetUserAttribute(AppNameAttribute, 0, AppName, Update.Option.Now);
         feature.SetUserAttribute(AppVersionAttribute, 0, version, Update.Option.Now);
         feature.SetUserAttribute(StandardIdAttribute, 0, standardId, Update.Option.Now);
+        feature.SetUserAttribute(BeadSpecAttribute, 0, beadSpec, Update.Option.Now);
         feature.SetUserAttribute(SpecIdAttribute, 0, specId, Update.Option.Now);
 
         if (isNewFeature)

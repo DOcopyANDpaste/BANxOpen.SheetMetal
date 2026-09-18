@@ -19,11 +19,15 @@ public sealed class FileSystemBeadSpecSource : IBeadSpecSource
 
     public IReadOnlyList<StandardInfo> ListStandards() => StandardFolderLayout.ListStandards(_table);
 
-    public string? FindWorkbook(StandardInfo standard) => StandardFolderLayout.FindBeadWorkbook(standard);
+    public string? FindWorkbook(StandardInfo standard, string beadSpecName) =>
+        StandardFolderLayout.FindBeadWorkbook(standard, beadSpecName);
+
+    public IReadOnlyList<string> ListWorkbooks(StandardInfo standard) =>
+        StandardFolderLayout.ListBeadSpecWorkbooks(standard);
 
     public IReadOnlyList<BeadSpecRow> ReadWorkbook(StandardInfo standard, string workbookPath)
     {
         using var stream = File.OpenRead(workbookPath);
-        return _parser.Parse(standard.Id, stream);
+        return _parser.Parse(standard.Id, StandardFolderLayout.WorkbookNameOf(workbookPath), stream);
     }
 }

@@ -63,6 +63,19 @@ public sealed class SheetMetalPreferenceService : ISheetMetalPreferenceReader
             return SheetMetalPreferenceRead.NotSheetMetal;
         }
 
+        // The body's own thickness, for the rows a choice marks as matching it. A body NX will not report a
+        // thickness for is not a failure: the preferences are still readable, and the choice simply marks no row
+        // as preferred rather than refusing to offer any.
+        double? bodyThickness = null;
+        try
+        {
+            bodyThickness = sheetmetalManager.GetBodyThickness(body);
+        }
+        catch (NXException ex)
+        {
+            _context.Log.Warn($"GetBodyThickness failed for '{body.Name}': NX {ex.ErrorCode}: {ex.Message}");
+        }
+
         try
         {
             var preferences = _context.WorkPart.Preferences.SheetMetalPreferences;
@@ -81,7 +94,7 @@ public sealed class SheetMetalPreferenceService : ISheetMetalPreferenceReader
                 CountSheetMetalBodies(),
                 _table.Find(materialName));
 
-            return SheetMetalPreferenceRead.Of(preference);
+            return SheetMetalPreferenceRead.Of(preference, bodyThickness);
         }
         catch (NXException ex)
         {

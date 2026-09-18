@@ -26,8 +26,10 @@ public sealed class SheetMetalServices
         BeadTracebackService tracebackService,
         BeadGeometryReader geometryReader,
         SheetMetalPreferenceService preferenceService,
+        SheetMetalStandardSelection standardSelection,
         IReadOnlyList<INxMaterialRuleModule> materialModules)
     {
+        StandardSelection = standardSelection;
         MaterialTable = materialTable;
         SpecCache = specCache;
         SpecLookup = specLookup;
@@ -54,6 +56,10 @@ public sealed class SheetMetalServices
     /// <summary>Reads and syncs the work part's Sheet Metal Preferences.</summary>
     public SheetMetalPreferenceService PreferenceService { get; }
 
+    /// <summary>The Standard a dialog with a Standard picker has chosen; the row choice only offers rows of it.
+    /// Left unset, every Standard's rows are offered.</summary>
+    public SheetMetalStandardSelection StandardSelection { get; }
+
     /// <summary>The material rule modules this domain contributes — pass them to <c>MaterialEngine.Create</c>:
     /// bead SPEC restrictions (<see cref="BeadFeatureRuleModule"/>) and Sheet Metal Preferences
     /// (<see cref="SheetMetalPreferenceRuleModule"/>).</summary>
@@ -69,7 +75,7 @@ public sealed class SheetMetalServices
             var settings = SheetMetalSettings.Load(SheetMetalConfigLocator.SettingsPath());
             var materialTable = SheetMetalMaterialTable.Load(SheetMetalMaterialTableLocator.Locate(context, settings));
             var specSource = new FileSystemBeadSpecSource(materialTable, new ExcelBeadSpecParser());
-            var specCache = new BeadSpecCache(specSource, SheetMetalConfigLocator.CacheDirectory());
+            var specCache = new BeadSpecCache(specSource, SheetMetalConfigLocator.CacheDirectory(), context.Log.Warn);
             var specLookup = new BeadSpecLookup(specCache, context.Log.Warn);
             var beadSettings = BeadSettings.Load(SheetMetalConfigLocator.BeadSettingsPath());
 
@@ -77,19 +83,21 @@ public sealed class SheetMetalServices
             var geometryReader = new BeadGeometryReader(context);
             var inventory = new BeadFeatureInventory(context, tracebackService, geometryReader);
             var preferenceService = new SheetMetalPreferenceService(context, materialTable);
+            var standardSelection = new SheetMetalStandardSelection(materialTable);
 
             var materialModules = new INxMaterialRuleModule[]
             {
                 new BeadFeatureRuleModule(new BeadMaterialConstraintProvider(inventory, specLookup, materialTable, beadSettings)),
                 new SheetMetalPreferenceRuleModule(
                     new SheetMetalPreferenceConstraintProvider(preferenceService, materialTable),
+                    new SheetMetalRowChoiceProvider(preferenceService, standardSelection),
                     new SyncSheetMetalPreferenceEffectRule(materialTable),
                     new SheetMetalPreferenceSyncExecutor(preferenceService, materialTable)),
             };
 
             return BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices>.Success(new SheetMetalServices(
                 materialTable, specCache, specLookup, beadSettings,
-                tracebackService, geometryReader, preferenceService, materialModules));
+                tracebackService, geometryReader, preferenceService, standardSelection, materialModules));
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException or InvalidDataException
                                        or IOException or UnauthorizedAccessException)

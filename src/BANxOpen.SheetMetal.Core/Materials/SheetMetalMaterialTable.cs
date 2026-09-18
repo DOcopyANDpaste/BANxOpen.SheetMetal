@@ -57,11 +57,21 @@ public sealed class SheetMetalMaterialTable
             ? null
             : Rows.FirstOrDefault(r => string.Equals(r.Name, materialName, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The row set in Sheet Metal Preferences when <paramref name="physicalMaterialName"/> is assigned without
-    /// the user picking one: the first in file order. Null when the physical material has no row.
+    /// <summary>Every row made of <paramref name="physicalMaterialName"/>, in file order — the rows Sheet Metal
+    /// Preferences could be set to when that material is assigned to a body.
     ///
-    /// Phase 1 only: the Material Assignment dialog cannot ask the user yet. Every automatic choice goes through here
-    /// so the grade that is checked and the row that is set are always the same row.</summary>
+    /// Usually more than one: the same physical material appears at several thicknesses, in several grades, and
+    /// across Standards. Which of them a part should use is not something the table settles, so
+    /// <c>SheetMetalRowChoiceProvider</c> puts the list to the user.</summary>
+    public IReadOnlyList<SheetMetalMaterialRow> RowsForPhysicalMaterial(string physicalMaterialName) =>
+        Rows.Where(r => string.Equals(r.PhysicalMaterialName, physicalMaterialName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    /// <summary>The first row in file order made of <paramref name="physicalMaterialName"/>, or null when the
+    /// physical material has no row at all.
+    ///
+    /// Used as the "is this material settable in the preferences at all" test — see
+    /// <see cref="SheetMetalPreferenceConstraintProvider"/>. It is no longer how the row that gets set is chosen:
+    /// arbitrarily taking the first of several was the phase 1 stand-in for asking the user.</summary>
     public SheetMetalMaterialRow? FirstRowForPhysicalMaterial(string physicalMaterialName) =>
         Rows.FirstOrDefault(r => string.Equals(r.PhysicalMaterialName, physicalMaterialName, StringComparison.OrdinalIgnoreCase));
 

@@ -9,9 +9,10 @@ namespace BANxOpen.SheetMetal.NxAdapters.Common;
 /// anything else runs — a single chosen SPEC's validation (thickness/material) only means anything against
 /// one profile.
 ///
-/// An <see cref="Edge"/> resolves to its owning body directly via <c>Edge.GetBody()</c>. A directly-selected
-/// <see cref="Feature"/> (per the "select the bead feature itself" case) resolves via whichever Face/Edge
-/// its own <c>GetEntities()</c> exposes. A free sketch <see cref="Curve"/> has no such relationship anywhere
+/// A directly-selected <see cref="Body"/> is the answer. An <see cref="Edge"/> resolves to its owning body
+/// directly via <c>Edge.GetBody()</c>. A directly-selected <see cref="Feature"/> (per the "select the bead
+/// feature itself" case) resolves through <see cref="FeatureBodyResolver"/>. A free sketch <see cref="Curve"/>
+/// has no such relationship anywhere
 /// in the NXOpen API, so it's resolved to "the part's one sheet metal body" when there is exactly one — a
 /// part with more than one sheet metal body and a sketch-curve selection can't be disambiguated this way,
 /// which is a known v1 limitation reported back as a clear error rather than silently guessing.</summary>
@@ -33,12 +34,18 @@ public sealed class SelectedCurveSetValidator
         {
             switch (item)
             {
+                // The dialog lets the user point at the sheet metal body itself instead of its curves, which is
+                // the one case where the answer needs no resolving at all.
+                case Body selectedBody:
+                    resolvedBodyTags.Add(selectedBody.Tag);
+                    break;
+
                 case Edge edge:
                     resolvedBodyTags.Add(edge.GetBody().Tag);
                     break;
 
                 case Feature feature:
-                    var body = ResolveBodyFromFeature(feature);
+                    var body = FeatureBodyResolver.Resolve(feature);
                     if (body is null)
                     {
                         return OperationResult<Body>.Fail(
@@ -85,25 +92,6 @@ public sealed class SelectedCurveSetValidator
         var bodyTag = resolvedBodyTags.Single();
         var resolvedBody = _context.WorkPart.Bodies.Cast<Body>().First(b => b.Tag.Equals(bodyTag));
         return OperationResult<Body>.Success(resolvedBody);
-    }
-
-    /// <summary>Best guess for resolving a directly-selected Feature's owning body: whatever Face or Edge
-    /// its own <c>GetEntities()</c> exposes. Not confirmed against a live selected Bead feature — if this
-    /// comes back null where it shouldn't, check what <c>GetEntities()</c> actually returns for a Bead
-    /// feature in your NX version (it may be Body-typed directly, in which case this can simplify).</summary>
-    private static Body? ResolveBodyFromFeature(Feature feature)
-    {
-        try
-        {
-            var entities = feature.GetEntities();
-            return entities.OfType<Body>().FirstOrDefault()
-                ?? entities.OfType<Face>().Select(f => f.GetBody()).FirstOrDefault()
-                ?? entities.OfType<Edge>().Select(e => e.GetBody()).FirstOrDefault();
-        }
-        catch (NXException)
-        {
-            return null;
-        }
     }
 
     private static bool IsSheetmetal(NXOpen.Features.SheetMetal.SheetmetalManager manager, Body body)

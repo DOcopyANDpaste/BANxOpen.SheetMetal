@@ -49,8 +49,12 @@ public static class BeadSpecMatcher
                 Math.Abs(geometry.ValueOf(mapping.Feature) - BeadSpecColumns.ValueOf(row, mapping.SpecColumn))
                     <= settings.GeometryMatchTolerance))
             // The same SPEC can reach here twice if two Standards share a workbook row; that is one SPEC,
-            // not an ambiguity.
-            .GroupBy(row => (row.StandardId, row.SpecId))
+            // not an ambiguity. The workbook is part of the key because a Standard holds one workbook per bead
+            // SPEC: without it, two genuinely different rows that happen to share a SpecId would collapse into
+            // one, turning a real ambiguity into a confident wrong match — the exact outcome this class exists
+            // to avoid. (SPEC ids are supposed to be unique within a Standard, so this is insurance against bad
+            // data rather than an expected case; BeadSpecCache.GetAllSpecs warns when it sees one.)
+            .GroupBy(row => (row.StandardId, row.WorkbookName, row.SpecId))
             .Select(group => group.First())
             .ToList();
 

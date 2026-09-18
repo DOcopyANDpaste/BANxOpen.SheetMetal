@@ -47,17 +47,37 @@ public class StandardFolderLayoutTests : IDisposable
     }
 
     [Fact]
-    public void The_one_workbook_in_the_bead_folder_is_the_Standards_workbook()
+    public void A_bead_SPEC_is_the_workbook_whose_name_contains_it()
     {
-        var workbook = Touch(BeadFolder("XX_Standard"), "Beads.xlsx");
+        var workbook = Touch(BeadFolder("XX_Standard"), "B1005010.xlsx");
 
-        Assert.Equal(workbook, StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard")));
+        Assert.Equal(workbook, StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "B1005010"));
+    }
+
+    [Fact]
+    public void A_revision_suffix_in_the_file_name_still_matches_the_SPEC()
+    {
+        var workbook = Touch(BeadFolder("XX_Standard"), "BA_Bead_B1005010_revC.xlsx");
+
+        Assert.Equal(workbook, StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "B1005010"));
+    }
+
+    [Fact]
+    public void Each_bead_SPEC_resolves_to_its_own_workbook()
+    {
+        var folder = BeadFolder("XX_Standard");
+        var first = Touch(folder, "B1005010.xlsx");
+        var second = Touch(folder, "S5010.xlsx");
+
+        Assert.Equal(first, StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "B1005010"));
+        Assert.Equal(second, StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "S5010"));
     }
 
     [Fact]
     public void A_missing_bead_folder_means_no_bead_SPECs()
     {
-        Assert.Null(StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard")));
+        Assert.Null(StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "B1005010"));
+        Assert.Empty(StandardFolderLayout.ListBeadSpecWorkbooks(Standard("XX_Standard")));
     }
 
     [Fact]
@@ -65,32 +85,69 @@ public class StandardFolderLayoutTests : IDisposable
     {
         var folder = BeadFolder("XX_Standard");
         Touch(folder, "No-Standards.xls");
-        Touch(folder, "~$Beads.xlsx");
+        Touch(folder, "~$B1005010.xlsx");
 
-        Assert.Null(StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard")));
+        Assert.Null(StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "B1005010"));
+        Assert.Empty(StandardFolderLayout.ListBeadSpecWorkbooks(Standard("XX_Standard")));
+    }
+
+    [Fact]
+    public void A_SPEC_no_workbook_is_named_for_has_no_workbook()
+    {
+        Touch(BeadFolder("XX_Standard"), "B1005010.xlsx");
+
+        Assert.Null(StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "S5010"));
     }
 
     [Fact]
     public void Excels_lock_file_is_not_a_second_workbook()
     {
         var folder = BeadFolder("XX_Standard");
-        var workbook = Touch(folder, "Beads.xlsx");
-        Touch(folder, "~$Beads.xlsx");
+        var workbook = Touch(folder, "B1005010.xlsx");
+        Touch(folder, "~$B1005010.xlsx");
 
-        Assert.Equal(workbook, StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard")));
+        Assert.Equal(workbook, StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "B1005010"));
+        Assert.Equal(new[] { workbook }, StandardFolderLayout.ListBeadSpecWorkbooks(Standard("XX_Standard")));
     }
 
     [Fact]
-    public void More_than_one_workbook_is_refused_naming_them()
+    public void A_SPEC_name_matching_two_workbooks_is_refused_naming_them()
     {
         var folder = BeadFolder("XX_Standard");
-        Touch(folder, "Aluminum.xlsx");
-        Touch(folder, "Steel.xlsx");
+        Touch(folder, "B1005010_revB.xlsx");
+        Touch(folder, "B1005010_revC.xlsx");
 
-        var ex = Assert.Throws<InvalidDataException>(() => StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard")));
+        var ex = Assert.Throws<InvalidDataException>(
+            () => StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "B1005010"));
 
-        Assert.Contains("Aluminum.xlsx", ex.Message);
-        Assert.Contains("Steel.xlsx", ex.Message);
+        Assert.Contains("B1005010_revB.xlsx", ex.Message);
+        Assert.Contains("B1005010_revC.xlsx", ex.Message);
+    }
+
+    [Fact]
+    public void A_workbook_named_exactly_as_the_SPEC_wins_over_ones_that_contain_it()
+    {
+        var folder = BeadFolder("XX_Standard");
+        var exact = Touch(folder, "B100.xlsx");
+        Touch(folder, "B1005010.xlsx");
+
+        Assert.Equal(exact, StandardFolderLayout.FindBeadWorkbook(Standard("XX_Standard"), "B100"));
+    }
+
+    [Fact]
+    public void Every_workbook_in_the_folder_is_listed_for_the_all_SPECs_search()
+    {
+        var folder = BeadFolder("XX_Standard");
+        var first = Touch(folder, "B1005010.xlsx");
+        var second = Touch(folder, "S5010.xlsx");
+
+        Assert.Equal(new[] { first, second }, StandardFolderLayout.ListBeadSpecWorkbooks(Standard("XX_Standard")));
+    }
+
+    [Fact]
+    public void A_workbook_is_named_by_its_file_stem()
+    {
+        Assert.Equal("B1005010", StandardFolderLayout.WorkbookNameOf(@"C:\specs\XX\Features\BEAD\B1005010.xlsx"));
     }
 
     [Theory]

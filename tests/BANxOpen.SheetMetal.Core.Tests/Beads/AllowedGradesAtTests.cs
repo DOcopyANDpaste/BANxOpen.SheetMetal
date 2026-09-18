@@ -6,7 +6,7 @@ namespace BANxOpen.SheetMetal.Tests.Beads;
 public class AllowedGradesAtTests
 {
     private static BeadSpecRow Row(string specId, double thickness, params string[] allowed) =>
-        new("B1005010", specId, RadiusAndRadS: 0.245, Width: 0.625, Height: 0.625, DieRadiusP: 0.188,
+        new("B1005010", "B1005010", specId, RadiusAndRadS: 0.245, Width: 0.625, Height: 0.625, DieRadiusP: 0.188,
             Thickness: thickness,
             AllowedMaterialGrades: new Dictionary<string, bool>
             {
