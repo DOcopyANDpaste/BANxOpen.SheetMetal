@@ -9,16 +9,15 @@ namespace BANxOpen.SheetMetal.Common;
 /// }
 /// </code>
 ///
-/// Almost everything is decided by NX's sheet metal material standards file instead; this only says where to find it
-/// when NX's own setting should not be used — a test table during development, for instance.</summary>
+/// Almost everything is decided by NX's sheet metal material standards file instead; this only says where to find it.</summary>
 public sealed class SheetMetalSettings
 {
     public static SheetMetalSettings Default { get; } = new(null);
 
     public SheetMetalSettings(string? materialTablePath) => MaterialTablePath = materialTablePath;
 
-    /// <summary>The sheet metal material standards file to use instead of the one NX is configured with. Null to use
-    /// NX's. A relative path is resolved against the folder holding the settings file, not the working directory,
+    /// <summary>The sheet metal material standards file. Null when not set, which
+    /// <see cref="SheetMetalConfigLocator.MaterialTablePath"/> reports as an error. A relative path is resolved against the folder holding the settings file, not the working directory,
     /// which inside NX is unrelated to where the config lives.</summary>
     public string? MaterialTablePath { get; }
 

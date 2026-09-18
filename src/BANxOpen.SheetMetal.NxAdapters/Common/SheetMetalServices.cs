@@ -72,8 +72,7 @@ public sealed class SheetMetalServices
     {
         try
         {
-            var settings = SheetMetalSettings.Load(SheetMetalConfigLocator.SettingsPath());
-            var materialTable = SheetMetalMaterialTable.Load(SheetMetalMaterialTableLocator.Locate(context, settings));
+            var materialTable = SheetMetalMaterialTable.Load(SheetMetalConfigLocator.MaterialTablePath());
             var specSource = new FileSystemBeadSpecSource(materialTable, new ExcelBeadSpecParser());
             var specCache = new BeadSpecCache(specSource, SheetMetalConfigLocator.CacheDirectory(), context.Log.Warn);
             var specLookup = new BeadSpecLookup(specCache, context.Log.Warn);

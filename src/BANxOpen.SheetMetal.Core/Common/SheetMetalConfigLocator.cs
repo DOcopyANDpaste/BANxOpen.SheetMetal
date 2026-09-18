@@ -75,6 +75,22 @@ public static class SheetMetalConfigLocator
     /// <summary>See <see cref="SheetMetalSettings.Load"/>.</summary>
     public static string SettingsPath() => Path.Combine(Locate(), MarkerFileName);
 
+    /// <summary>The sheet metal material standards file, from <c>materialTablePath</c> in sheetmetal-settings.json.
+    /// This is the only source for now. NX's Customer Defaults are not read.</summary>
+    /// <exception cref="FileNotFoundException"><c>materialTablePath</c> is not set, or names a file that does not exist.</exception>
+    public static string MaterialTablePath()
+    {
+        var settingsPath = SettingsPath();
+        var path = SheetMetalSettings.Load(settingsPath).MaterialTablePath
+                   ?? throw new FileNotFoundException(
+                       $"materialTablePath is not set in {settingsPath}. Set it to the sheet metal material standards file.");
+
+        return File.Exists(path)
+            ? path
+            : throw new FileNotFoundException(
+                $"The sheet metal material standards file set in {settingsPath} (materialTablePath) does not exist: {path}", path);
+    }
+
     /// <summary>Optional: a missing file means default settings. See <c>BeadSettings.Load</c>.</summary>
     public static string BeadSettingsPath() => Path.Combine(Locate(), "bead-settings.json");
 
