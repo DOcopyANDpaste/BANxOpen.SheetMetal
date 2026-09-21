@@ -25,19 +25,49 @@ public static class BeadAttributeWriter
 
     private const string AppName = "NxSheetMetalBead";
 
+    /// <summary>NX's index for a plain, non-array attribute. Index 0 is the first element of an ARRAY attribute.</summary>
+    internal const int NotAnArray = -1;
+
+    /// <summary>Beads stamped before the index fix carry their attributes as one-element arrays at this index.</summary>
+    internal const int LegacyArrayIndex = 0;
+
+    /// <remarks>Update.Option.Later: an attribute does not change geometry, and Now made NX run a full model update
+    /// for every one of the seven attributes, on a feature just committed inside the dialog's undo mark.</remarks>
     public static void Stamp(Feature feature, string standardId, string beadSpec, string specId, bool isNewFeature)
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0.0";
         var nowUtc = DateTime.UtcNow.ToString("O");
 
-        feature.SetUserAttribute(AppNameAttribute, 0, AppName, Update.Option.Now);
-        feature.SetUserAttribute(AppVersionAttribute, 0, version, Update.Option.Now);
-        feature.SetUserAttribute(StandardIdAttribute, 0, standardId, Update.Option.Now);
-        feature.SetUserAttribute(BeadSpecAttribute, 0, beadSpec, Update.Option.Now);
-        feature.SetUserAttribute(SpecIdAttribute, 0, specId, Update.Option.Now);
+        Set(feature, AppNameAttribute, AppName);
+        Set(feature, AppVersionAttribute, version);
+        Set(feature, StandardIdAttribute, standardId);
+        Set(feature, BeadSpecAttribute, beadSpec);
+        Set(feature, SpecIdAttribute, specId);
 
         if (isNewFeature)
-            feature.SetUserAttribute(CreatedUtcAttribute, 0, nowUtc, Update.Option.Now);
-        feature.SetUserAttribute(ModifiedUtcAttribute, 0, nowUtc, Update.Option.Now);
+            Set(feature, CreatedUtcAttribute, nowUtc);
+        Set(feature, ModifiedUtcAttribute, nowUtc);
+    }
+
+    /// <summary>The attribute's value, whether stamped as a plain attribute or, by an older version, as a
+    /// one-element array. Null when absent.</summary>
+    internal static string? Read(Feature feature, string title)
+    {
+        foreach (var index in new[] { NotAnArray, LegacyArrayIndex })
+        {
+            if (feature.HasUserAttribute(title, NXObject.AttributeType.String, index))
+                return feature.GetStringUserAttribute(title, index);
+        }
+
+        return null;
+    }
+
+    private static void Set(Feature feature, string title, string value)
+    {
+        // A bead re-stamped by this version drops the old array form, so it never carries both.
+        if (feature.HasUserAttribute(title, NXObject.AttributeType.String, LegacyArrayIndex))
+            feature.DeleteUserAttribute(NXObject.AttributeType.String, title, true, Update.Option.Later);
+
+        feature.SetUserAttribute(title, NotAnArray, value, Update.Option.Later);
     }
 }

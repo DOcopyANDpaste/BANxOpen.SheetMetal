@@ -32,26 +32,24 @@ public sealed class ExpressionService
     public static void BindToExpression(Expression builderOwnedExpression, Expression namedExpression) =>
         builderOwnedExpression.SetFormula(namedExpression.Name);
 
+    /// <summary>A user expression, not a system one: NX expects a system expression to be associated with an object
+    /// and deletes it with that object, so a renamed system expression shared by several beads can be deleted along
+    /// with one of them while the others still reference it.</summary>
     private Expression EnsureNamedExpression(string name, double value, Unit unit)
     {
         var expressions = _context.WorkPart.Expressions;
         var formula = value.ToString(CultureInfo.InvariantCulture);
 
-        try
+        // Looked up by name rather than FindObject-and-catch: that catch also swallowed a failed edit, and then
+        // tried to create a second expression with the same name.
+        var existing = expressions.Cast<Expression>().FirstOrDefault(e => e.Name == name);
+        if (existing is not null)
         {
-            var existing = expressions.FindObject(name);
             expressions.EditExpressionWithUnits(existing, unit, formula);
             return existing;
         }
-        catch (NXException)
-        {
-            // FindObject throws when no expression with this name exists yet — the normal "first time this
-            // SPEC is used" path, not an error.
-        }
 
-        var created = expressions.CreateSystemExpressionWithUnits(formula, unit);
-        expressions.Rename(created, name);
-        return created;
+        return expressions.CreateNumberExpression($"{name}={formula}", unit);
     }
 
     private static string Sanitize(string value) => new(value.Where(char.IsLetterOrDigit).ToArray());

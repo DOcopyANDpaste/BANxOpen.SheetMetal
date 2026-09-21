@@ -12,9 +12,12 @@ namespace BANxOpen.SheetMetal.NxAdapters.Beads;
 /// <summary>Creates or updates one Bead feature from one chain of curves: the bead dialog's rule is one chain
 /// collected in its curve selection maps to one Bead feature, and a single curve is simply a chain of one.
 /// Cross section is fixed to Circular and end type
-/// fixed to Formed (per the requirements); minimum tool clearance is never touched, so NX's own default
-/// stands. Depth/Radius/DieRadius are bound to named expressions via <see cref="ExpressionService"/>
-/// rather than set as literals.
+/// fixed to Formed (per the requirements); minimum tool clearance gets NX's own default, the link to the Sheet Metal
+/// Preferences that the Bead dialog records. Depth/Radius/DieRadius are bound to named expressions via
+/// <see cref="ExpressionService"/> rather than set as literals.
+///
+/// Every builder setting follows a journal recorded from NX's own Bead dialog (NX 2412); where this class differs
+/// from the dialog, the dialog wins.
 ///
 /// The side the bead is formed to is absolute: the dialog builds every bead to the side the user chose, an
 /// existing bead included, so the same selection and SPEC always produce the same bead.
@@ -42,6 +45,25 @@ public sealed class BeadFeatureService
     public OperationResult<Feature> CreateOrUpdate(
         IReadOnlyList<NXObject> chain, BeadSpecRow spec, Feature? existingFeature, BeadBuilder.HeightSideOptions side)
     {
+        // The SPEC's named expressions are created or edited BEFORE the builder opens: changing part expressions
+        // while a feature builder is open on the same part is not something the interactive dialog ever does. They
+        // are in the part's base length unit, the unit the builder's own Height/Radius/DieRadius carry.
+        BeadExpressionSet expressionSet;
+        try
+        {
+            expressionSet = _expressionService.EnsureSpecExpressions(
+                spec.StandardId, spec.SpecId,
+                _settings.SpecValueFor(spec, BeadFeatureParameter.Height),
+                _settings.SpecValueFor(spec, BeadFeatureParameter.Radius),
+                _settings.SpecValueFor(spec, BeadFeatureParameter.DieRadius),
+                _context.WorkPart.UnitCollection.GetBase("Length"));
+        }
+        catch (NXException ex)
+        {
+            _context.Log.Error($"Bead SPEC expressions could not be created: NX {ex.ErrorCode}: {ex.Message}");
+            return OperationResult<Feature>.Fail("BEAD_EXPRESSIONS_FAILED", ex.Message);
+        }
+
         if (!TryCreateBuilder(existingFeature, out var builder, out var failure))
             return failure!;
 
@@ -50,16 +72,8 @@ public sealed class BeadFeatureService
             Configure(builder!, chain, existingFeature, side);
 
             // The builder's own Height/Radius/DieRadius are pre-created NXOpen.Expression handles (owned by
-            // the builder, not settable as objects) — the unit is read off Height so our named expressions
-            // are created in the same unit system the builder already expects, rather than guessing a unit.
-            var expressionSet = _expressionService.EnsureSpecExpressions(
-                spec.StandardId, spec.SpecId,
-                _settings.SpecValueFor(spec, BeadFeatureParameter.Height),
-                _settings.SpecValueFor(spec, BeadFeatureParameter.Radius),
-                _settings.SpecValueFor(spec, BeadFeatureParameter.DieRadius),
-                builder!.Height.Units);
-
-            ExpressionService.BindToExpression(builder.Height, expressionSet.Depth);
+            // the builder, not settable as objects); they are pointed at the named expressions by formula.
+            ExpressionService.BindToExpression(builder!.Height, expressionSet.Depth);
             ExpressionService.BindToExpression(builder.Radius, expressionSet.Radius);
             ExpressionService.BindToExpression(builder.DieRadius, expressionSet.DieRadius);
 
@@ -132,13 +146,24 @@ public sealed class BeadFeatureService
 
     private void Configure(BeadBuilder builder, IReadOnlyList<NXObject> chain, Feature? existingFeature, BeadBuilder.HeightSideOptions side)
     {
+        builder.IncludeRounding = true;
         builder.CrossSectionType = BeadBuilder.CrossSectionTypeOptions.Circular;
         builder.EndType = BeadBuilder.EndTypeOptions.Formed;
         builder.HeightSide = side;
-        // MinimumToolClearance intentionally left alone — NX's own default stands, per the requirement.
 
-        if (existingFeature is null)
-            SetChainSection(builder, chain);
+        // FeatureBuilder defaults this to true, which turns the bead's latest timestamped parent feature — typically
+        // the previous sheet metal feature on the body — internal: hidden from the Part Navigator, yet still
+        // building geometry. The recorded journal of the Bead dialog sets it false.
+        builder.ParentFeatureInternal = false;
+
+        if (existingFeature is not null)
+            return;
+
+        // NX's own default for a new bead, as the Bead dialog records it: linked to the Sheet Metal Preferences'
+        // Minimum Tool Clearance expression. A builder opened through the API does not get that link by itself.
+        builder.MinimumToolClearance.SetFormula(_context.WorkPart.Preferences.SheetMetalPreferences.GetMinimumToolClearance().Name);
+
+        SetChainSection(builder, chain);
     }
 
     /// <summary>Null when NX accepts the builder's data, else why not.</summary>
@@ -154,15 +179,12 @@ public sealed class BeadFeatureService
 
     private static string Literal(double value) => value.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>Puts the chain into the builder's Section. A create-mode builder can hand back no Section at all,
-    /// so one is then created and assigned; either way it carries the part's tolerances (see
-    /// <see cref="CurveSectionFactory"/>).</summary>
+    /// <summary>Gives the builder a new Section holding the chain, in the order the recorded Bead dialog journal
+    /// does it: no slave sketch, then the Section assigned. The builder's own Section is not filled in place.</summary>
     private void SetChainSection(BeadBuilder builder, IReadOnlyList<NXObject> chain)
     {
-        if (builder.Section is { } section)
-            CurveSectionFactory.Fill(_context.WorkPart, section, chain);
-        else
-            builder.Section = CurveSectionFactory.Create(_context.WorkPart, chain);
+        builder.Sketch = null;
+        builder.Section = CurveSectionFactory.Create(_context.WorkPart, chain);
     }
 }
 

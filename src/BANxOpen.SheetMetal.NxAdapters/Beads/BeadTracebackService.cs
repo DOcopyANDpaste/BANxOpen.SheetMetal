@@ -65,43 +65,34 @@ public sealed class BeadTracebackService
 
     private Feature? FindBeadFeatureUsingCurve(NXObject curve)
     {
-        var sheetmetalManager = _context.WorkPart.Features.SheetmetalManager;
-
         foreach (Feature feature in _context.WorkPart.Features)
         {
-            if (IsBeadFeature(feature) && UsesCurve(sheetmetalManager, feature, curve))
+            if (IsBeadFeature(feature) && UsesCurve(feature, curve))
                 return feature;
         }
 
         return null;
     }
 
-    private bool UsesCurve(NXOpen.Features.SheetMetal.SheetmetalManager sheetmetalManager, Feature feature, NXObject curve)
+    /// <summary>Reads the bead's sections off the feature itself. It used to open an edit-mode builder on every bead
+    /// in the part for each selected curve, and an edit builder rolls the model back to that feature while open.</summary>
+    private bool UsesCurve(Feature feature, NXObject curve)
     {
-        NXOpen.Features.SheetMetal.BeadBuilder builder;
         try
         {
-            builder = sheetmetalManager.CreateBeadFeatureBuilder(feature);
-        }
-        catch (NXException)
-        {
-            // FeatureType matched "BEAD" but the builder rejected it — treat as not a match rather than fail.
-            return false;
-        }
+            foreach (var section in feature.GetSections())
+            {
+                section.GetOutputCurves(out var sectionCurves);
+                if (sectionCurves.Any(c => c.Tag.Equals(curve.Tag)))
+                    return true;
+            }
 
-        try
-        {
-            builder.Section.GetOutputCurves(out var sectionCurves);
-            return sectionCurves.Any(c => c.Tag.Equals(curve.Tag));
+            return false;
         }
         catch (NXException ex)
         {
             _context.Log.Warn($"Could not read Section for feature '{feature.Name}': NX {ex.ErrorCode}: {ex.Message}");
             return false;
-        }
-        finally
-        {
-            builder.Destroy();
         }
     }
 
@@ -140,28 +131,20 @@ public sealed class BeadTracebackService
 
     private static CoreBeads.BeadTracebackResult ReadStamp(Feature feature)
     {
-        var hasStandard = feature.HasUserAttribute(BeadAttributeWriter.StandardIdAttribute, NXObject.AttributeType.String, 0);
-        var hasSpec = feature.HasUserAttribute(BeadAttributeWriter.SpecIdAttribute, NXObject.AttributeType.String, 0);
+        var standardId = BeadAttributeWriter.Read(feature, BeadAttributeWriter.StandardIdAttribute);
+        var specId = BeadAttributeWriter.Read(feature, BeadAttributeWriter.SpecIdAttribute);
 
-        if (!hasStandard || !hasSpec)
+        if (standardId is null || specId is null)
             return new CoreBeads.BeadTracebackResult(false, true, null, null, null);
-
-        var standardId = feature.GetStringUserAttribute(BeadAttributeWriter.StandardIdAttribute, 0);
-        var specId = feature.GetStringUserAttribute(BeadAttributeWriter.SpecIdAttribute, 0);
 
         // Optional on purpose: a bead stamped before this attribute existed carries the Standard and the SPEC but
         // not the bead SPEC name. That is still a complete stamp as far as Found is concerned — reporting it as
         // unstamped would tell the user this tool did not build their own bead. The caller looks the SPEC id up.
-        var beadSpec = feature.HasUserAttribute(BeadAttributeWriter.BeadSpecAttribute, NXObject.AttributeType.String, 0)
-            ? feature.GetStringUserAttribute(BeadAttributeWriter.BeadSpecAttribute, 0)
-            : null;
+        var beadSpec = BeadAttributeWriter.Read(feature, BeadAttributeWriter.BeadSpecAttribute);
 
         DateTime? createdUtc = null;
-        if (feature.HasUserAttribute(BeadAttributeWriter.CreatedUtcAttribute, NXObject.AttributeType.String, 0) &&
-            DateTime.TryParse(feature.GetStringUserAttribute(BeadAttributeWriter.CreatedUtcAttribute, 0), out var parsed))
-        {
+        if (DateTime.TryParse(BeadAttributeWriter.Read(feature, BeadAttributeWriter.CreatedUtcAttribute), out var parsed))
             createdUtc = parsed;
-        }
 
         return new CoreBeads.BeadTracebackResult(true, false, standardId, specId, createdUtc, BeadSpec: beadSpec);
     }

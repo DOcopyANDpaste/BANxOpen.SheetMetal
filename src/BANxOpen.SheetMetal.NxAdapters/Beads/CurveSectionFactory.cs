@@ -6,8 +6,8 @@ namespace BANxOpen.SheetMetal.NxAdapters.Beads;
 /// tolerances (chaining = 0.95 × distance, as NX records it) set on the Section, not left at zero — a parameterless
 /// <c>Sections.CreateSection()</c> carries zero tolerances and fails the bead builder's validation.
 ///
-/// Used both for a bead builder that hands back no Section of its own, and to put a chain back into the bead
-/// dialog's curve block, which only takes Sections, never bare curves.</summary>
+/// Used both for a bead builder's Section, and to put a chain back into the bead dialog's curve block, which only
+/// takes Sections, never bare curves. The calls and their order follow a journal recorded from NX's Bead dialog.</summary>
 public static class CurveSectionFactory
 {
     /// <summary>A new Section holding <paramref name="chain"/>.</summary>
@@ -18,27 +18,13 @@ public static class CurveSectionFactory
         var distanceTolerance = modeling.DistanceToleranceData;
 
         var section = workPart.Sections.CreateSection(distanceTolerance * 0.95, distanceTolerance, modeling.AngleToleranceData);
-        AddChain(workPart, section, chain, curves);
-        return section;
-    }
-
-    /// <summary>Fills an existing, empty Section with <paramref name="chain"/>, setting the part's tolerances on it.</summary>
-    internal static void Fill(Part workPart, Section section, IReadOnlyList<NXObject> chain)
-    {
-        var curves = BaseCurvesOf(chain);
-        var distanceTolerance = workPart.Preferences.Modeling.DistanceToleranceData;
-        section.DistanceTolerance = distanceTolerance;
-        section.ChainingTolerance = distanceTolerance * 0.95;
-
-        AddChain(workPart, section, chain, curves);
-    }
-
-    private static void AddChain(Part workPart, Section section, IReadOnlyList<NXObject> chain, IBaseCurve[] curves)
-    {
         section.SetAllowedEntityTypes(Section.AllowTypes.OnlyCurves);
+        section.AllowSelfIntersection(true);
+        section.AllowDegenerateCurves(false);
 
         var rule = workPart.ScRuleFactory.CreateRuleBaseCurveDumb(curves);
-        section.AddToSection(new SelectionIntentRule[] { rule }, chain[0], null, null, new Point3d(0, 0, 0), Section.Mode.Create);
+        section.AddToSection(new SelectionIntentRule[] { rule }, null, null, null, new Point3d(0, 0, 0), Section.Mode.Create, false);
+        return section;
     }
 
     private static IBaseCurve[] BaseCurvesOf(IReadOnlyList<NXObject> chain)
