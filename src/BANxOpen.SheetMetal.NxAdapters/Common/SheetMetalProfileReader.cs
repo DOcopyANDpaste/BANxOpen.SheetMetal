@@ -12,10 +12,8 @@ namespace BANxOpen.SheetMetal.NxAdapters.Common;
 /// <c>MaterialManager.PhysicalMaterials.AskMaterialOfObject</c> path <c>PartMaterialService</c> uses in the Material
 /// Assignment tool, and the part's Sheet Metal Preferences.
 ///
-/// No grade is read here. The grade belongs to the sheet metal material standards file row the user picks (or the
-/// row already in the preferences), so the presenter builds the <see cref="SheetMetalProfile"/> once a row is known
-/// (<see cref="ProfileReadOutcome.ProfileFor"/>). Preferences that cannot be read fail the read, just as the material
-/// engine refuses an assignment it cannot check them for.</summary>
+/// No grade is read here: it belongs to the standards file row the user picks. Preferences that cannot be read fail
+/// the read, just as the material engine refuses an assignment it cannot check them for.</summary>
 public sealed class SheetMetalProfileReader
 {
     private readonly NxSessionContext _context;
@@ -53,7 +51,8 @@ public sealed class SheetMetalProfileReader
             return OperationResult<ProfileReadOutcome>.Fail("THICKNESS_READ_FAILED", "Could not read this sheet metal's thickness.");
         }
 
-        var preferenceRead = _preferences.ReadFor(body);
+        // Part-level: the sheet metal check and thickness are already done above, so not ReadFor(body), which repeats them.
+        var preferenceRead = _preferences.ReadForPart();
         if (preferenceRead.Preference is not { } preference)
         {
             return OperationResult<ProfileReadOutcome>.Fail(
@@ -85,10 +84,4 @@ public sealed class SheetMetalProfileReader
 /// <param name="Preference">The part's Sheet Metal Preferences, whose <see cref="SheetMetalPartPreference.Row"/> is the
 /// row they are set to.</param>
 public sealed record ProfileReadOutcome(
-    BodyId BodyId, string BodyName, double Thickness, string? PhysicalMaterialName, SheetMetalPartPreference Preference)
-{
-    public bool MaterialMissing => PhysicalMaterialName is null;
-
-    /// <summary>The facts a SPEC is validated against when the body is made to <paramref name="row"/>.</summary>
-    public SheetMetalProfile ProfileFor(SheetMetalMaterialRow row) => new(BodyId, BodyName, Thickness, row.Grade);
-}
+    BodyId BodyId, string BodyName, double Thickness, string? PhysicalMaterialName, SheetMetalPartPreference Preference);

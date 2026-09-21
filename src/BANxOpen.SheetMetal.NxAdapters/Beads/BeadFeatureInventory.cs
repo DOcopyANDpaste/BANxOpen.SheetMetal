@@ -30,12 +30,11 @@ public sealed class BeadFeatureInventory : IFeatureInventory
     private readonly BeadTracebackService _traceback;
     private readonly BeadGeometryReader _geometry;
 
-    public BeadFeatureInventory(
-        NxSessionContext context, BeadTracebackService? traceback = null, BeadGeometryReader? geometry = null)
+    public BeadFeatureInventory(NxSessionContext context, BeadTracebackService traceback, BeadGeometryReader geometry)
     {
         _context = context;
-        _traceback = traceback ?? new BeadTracebackService(context);
-        _geometry = geometry ?? new BeadGeometryReader(context);
+        _traceback = traceback;
+        _geometry = geometry;
     }
 
     public BodyFeatureInventory Read(BodyId bodyId)
@@ -53,6 +52,7 @@ public sealed class BeadFeatureInventory : IFeatureInventory
 
         var stamps = new List<FeatureSpecStamp>();
         var unstamped = new List<UnstampedFeature>();
+        double? thickness = null;
 
         foreach (var feature in features)
         {
@@ -61,15 +61,38 @@ public sealed class BeadFeatureInventory : IFeatureInventory
                 continue;
 
             var trace = _traceback.Trace(feature);
+            // The bead the traceback resolves to, as the bead dialog keys its selection: a pattern member follows its
+            // original, so selecting the original lifts both.
+            var key = (trace.ExistingFeature ?? feature).Tag.ToString();
 
             if (trace.Result.Found && trace.Result.StandardId is { } standardId && trace.Result.SpecId is { } specId)
-                stamps.Add(new FeatureSpecStamp(standardId, specId));
+            {
+                stamps.Add(new FeatureSpecStamp(standardId, specId, key, DisplayName(feature)));
+            }
             else if (trace.Result.HasUnstampedFeature)
-                unstamped.Add(new UnstampedFeature(DisplayName(feature), _geometry.Read(trace.ExistingFeature ?? feature, body)));
+            {
+                // Read once per scan: every bead here is on the same body.
+                thickness ??= ThicknessOf(body);
+                var geometry = thickness is { } t ? _geometry.Read(trace.ExistingFeature ?? feature, t) : null;
+                unstamped.Add(new UnstampedFeature(DisplayName(feature), geometry, key));
+            }
             // Neither: not a bead feature at all.
         }
 
         return new BodyFeatureInventory(stamps, unstamped);
+    }
+
+    private double? ThicknessOf(Body body)
+    {
+        try
+        {
+            return _context.WorkPart.Features.SheetmetalManager.GetBodyThickness(body);
+        }
+        catch (NXException ex)
+        {
+            _context.Log.Warn($"Could not read the thickness of '{body.Name}' to identify its unstamped beads: NX {ex.ErrorCode}: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>The body with <paramref name="bodyId"/> among the feature's bodies, or null if it is not one of

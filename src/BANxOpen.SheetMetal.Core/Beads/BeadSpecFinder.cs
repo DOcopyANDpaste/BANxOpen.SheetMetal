@@ -21,7 +21,26 @@ public sealed class BeadSpecFinder
     public static IReadOnlyCollection<string> AllowedGradesAt(IEnumerable<BeadSpecRow> specs, double thickness) =>
         new HashSet<string>(
             specs
-                .Where(spec => Math.Abs(spec.Thickness - thickness) <= Rules.ThicknessMatchRule.ToleranceInches)
+                .Where(spec => Rules.ThicknessMatchRule.Matches(spec.Thickness, thickness))
                 .SelectMany(spec => spec.AllowedMaterialGrades.Where(kv => kv.Value).Select(kv => kv.Key)),
             StringComparer.Ordinal);
+
+    /// <summary>Grades every one of <paramref name="specs"/> allows at <paramref name="thickness"/> — what the
+    /// sheet metal can be made of without invalidating any bead already built to them. Each SPEC contributes
+    /// <see cref="AllowedGradesAt"/> of itself, so a SPEC of another thickness allows nothing. Null when there are no
+    /// SPECs: nothing restricts the grade.</summary>
+    public static IReadOnlyCollection<string>? GradesAllowedByAll(IEnumerable<BeadSpecRow> specs, double thickness)
+    {
+        HashSet<string>? allowed = null;
+        foreach (var spec in specs)
+        {
+            var grades = AllowedGradesAt(new[] { spec }, thickness);
+            if (allowed is null)
+                allowed = new HashSet<string>(grades, StringComparer.Ordinal);
+            else
+                allowed.IntersectWith(grades);
+        }
+
+        return allowed;
+    }
 }

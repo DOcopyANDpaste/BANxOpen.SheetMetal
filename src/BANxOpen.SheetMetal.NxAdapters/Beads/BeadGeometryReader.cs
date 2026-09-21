@@ -17,27 +17,15 @@ public sealed class BeadGeometryReader
 
     public BeadGeometryReader(NxSessionContext context) => _context = context;
 
-    /// <summary>Null when the feature cannot be opened as a bead or the body's thickness cannot be read.
-    /// Callers treat that as "cannot be identified", which warns rather than guessing.</summary>
-    public BeadGeometry? Read(Feature beadFeature, Body body)
+    /// <summary>Null when the feature cannot be opened as a bead. Callers treat that as "cannot be identified", which
+    /// warns rather than guessing.</summary>
+    /// <param name="thickness">The thickness of the body the bead is on, which the caller has already read.</param>
+    public BeadGeometry? Read(Feature beadFeature, double thickness)
     {
-        var sheetmetalManager = _context.WorkPart.Features.SheetmetalManager;
-
-        double thickness;
-        try
-        {
-            thickness = sheetmetalManager.GetBodyThickness(body);
-        }
-        catch (NXException ex)
-        {
-            _context.Log.Warn($"Could not read the thickness of '{body.Name}' to identify bead '{beadFeature.Name}': NX {ex.ErrorCode}: {ex.Message}");
-            return null;
-        }
-
         BeadBuilder builder;
         try
         {
-            builder = sheetmetalManager.CreateBeadFeatureBuilder(beadFeature);
+            builder = _context.WorkPart.Features.SheetmetalManager.CreateBeadFeatureBuilder(beadFeature);
         }
         catch (NXException ex)
         {

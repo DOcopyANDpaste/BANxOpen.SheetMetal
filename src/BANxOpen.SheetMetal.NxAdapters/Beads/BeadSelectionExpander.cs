@@ -10,10 +10,7 @@ namespace BANxOpen.SheetMetal.NxAdapters.Beads;
 /// <param name="Curves">The chain's curves; empty for a Bead feature.</param>
 /// <param name="BeadFeature">The Bead feature the user picked; null for a chain.</param>
 /// <param name="FromSketch">The sketch every curve of the chain belongs to, when there is one — for naming the chain.</param>
-public sealed record ExpandedSelectionItem(IReadOnlyList<NXObject> Curves, Feature? BeadFeature, Sketch? FromSketch)
-{
-    public bool IsChain => BeadFeature is null;
-}
+public sealed record ExpandedSelectionItem(IReadOnlyList<NXObject> Curves, Feature? BeadFeature, Sketch? FromSketch);
 
 /// <param name="Items">What the dialog works on, in selection order, with no chain or feature twice.</param>
 /// <param name="Rejected">What the user picked that the dialog cannot build from. Left out of <see cref="Items"/>;
@@ -35,7 +32,7 @@ public sealed class BeadSelectionExpander
 
     public BeadSelectionExpander(NxSessionContext context) => _context = context;
 
-    /// <param name="curveBlockObjects">What the curve block returned.</param>
+    /// <param name="curveBlockObjects">What the curve block returned: Sections.</param>
     /// <param name="featureBlockObjects">What the Bead feature block returned.</param>
     public ExpandedSelection Expand(IReadOnlyList<NXObject> curveBlockObjects, IReadOnlyList<NXObject> featureBlockObjects)
     {
@@ -44,65 +41,44 @@ public sealed class BeadSelectionExpander
         var notes = new List<string>();
         var seenChains = new HashSet<string>();
         var seenFeatures = new HashSet<Tag>();
+        Dictionary<Tag, Sketch>? sketchOfCurve = null;
 
-        // Each source is split into its connected chains: a chain is one bead, so two separate lines picked
-        // together are two beads, not one bead NX cannot build.
-        void AddChains(IReadOnlyList<NXObject> curves, string source)
+        foreach (var item in curveBlockObjects)
         {
+            if (item is not Section section)
+            {
+                rejected.Add(item);
+                continue;
+            }
+
+            var source = $"Section {section.JournalIdentifier}";
+            var curves = CurvesOf(section, rejected);
             if (curves.Count == 0)
             {
                 notes.Add($"{source}: no curves");
-                return;
+                continue;
             }
 
+            // Each section is split into its connected chains: a chain is one bead, so two separate lines picked
+            // together are two beads, not one bead NX cannot build.
             var chains = SplitIntoChains(curves);
             if (chains.Count > 1)
                 notes.Add($"{source}: {curves.Count} curve(s) split into {chains.Count} connected chain(s)");
 
             foreach (var chain in chains)
-                AddChain(chain, source);
-        }
-
-        void AddChain(IReadOnlyList<NXObject> curves, string source)
-        {
-            var key = string.Join(",", curves.Select(c => c.Tag.ToString()).OrderBy(t => t, StringComparer.Ordinal));
-            if (!seenChains.Add(key))
             {
-                notes.Add($"{source}: same curves as a chain already listed, left out");
-                return;
-            }
+                var key = string.Join(",", chain.Select(c => c.Tag.ToString()).OrderBy(t => t, StringComparer.Ordinal));
+                if (!seenChains.Add(key))
+                {
+                    notes.Add($"{source}: same curves as a chain already listed, left out");
+                    continue;
+                }
 
-            items.Add(new ExpandedSelectionItem(curves, null, SketchContainingAll(curves)));
-            notes.Add($"{source}: chain of {curves.Count} curve(s)");
-        }
-
-        // VERIFY: which objects SuperSection.GetSelectedObjects() returns. A Section's curves and bare curves, if
-        // that is what comes back, are each split into their connected chains.
-        var looseCurves = new List<NXObject>();
-        foreach (var item in curveBlockObjects)
-        {
-            switch (item)
-            {
-                case Section section:
-                    AddChains(CurvesOf(section, rejected), $"Section {section.JournalIdentifier}");
-                    break;
-
-                case Sketch sketch:
-                    AddChains(CurvesOf(sketch), $"Sketch {sketch.Name}");
-                    break;
-
-                case Curve curve:
-                    looseCurves.Add(curve);
-                    break;
-
-                default:
-                    rejected.Add(item);
-                    break;
+                sketchOfCurve ??= SketchOfEveryCurve();
+                items.Add(new ExpandedSelectionItem(chain, null, SketchContainingAll(chain, sketchOfCurve)));
+                notes.Add($"{source}: chain of {chain.Count} curve(s)");
             }
         }
-
-        if (looseCurves.Count > 0)
-            AddChains(looseCurves, "Bare curves from the curve block");
 
         foreach (var item in featureBlockObjects)
         {
@@ -207,42 +183,39 @@ public sealed class BeadSelectionExpander
         return curves;
     }
 
-    private List<NXObject> CurvesOf(Sketch sketch)
+    /// <summary>Which sketch each sketch curve in the part belongs to, read once per expansion rather than once per
+    /// chain.</summary>
+    private Dictionary<Tag, Sketch> SketchOfEveryCurve()
     {
-        try
+        var map = new Dictionary<Tag, Sketch>();
+        foreach (Sketch sketch in _context.WorkPart.Sketches)
         {
-            return sketch.GetAllGeometry().OfType<Curve>().Cast<NXObject>().ToList();
+            try
+            {
+                foreach (var geometry in sketch.GetAllGeometry())
+                    map[geometry.Tag] = sketch;
+            }
+            catch (NXException)
+            {
+                // A sketch that cannot be read names no chain; the chain is then named by its curves alone.
+            }
         }
-        catch (NXException ex)
-        {
-            _context.Log.Warn($"Could not read the geometry of sketch '{sketch.Name}': NX {ex.ErrorCode}: {ex.Message}");
-            return new List<NXObject>();
-        }
+
+        return map;
     }
 
     /// <summary>The sketch holding every curve of the chain, or null when there is none — the chain is then named by
     /// its curves alone.</summary>
-    private Sketch? SketchContainingAll(IReadOnlyList<NXObject> curves)
+    private static Sketch? SketchContainingAll(IReadOnlyList<NXObject> curves, IReadOnlyDictionary<Tag, Sketch> sketchOfCurve)
     {
-        var tags = new HashSet<Tag>(curves.Select(c => c.Tag));
-
-        foreach (Sketch sketch in _context.WorkPart.Sketches)
+        Sketch? sketch = null;
+        foreach (var curve in curves)
         {
-            NXObject[] geometry;
-            try
-            {
-                geometry = sketch.GetAllGeometry();
-            }
-            catch (NXException)
-            {
-                continue;
-            }
-
-            var inSketch = new HashSet<Tag>(geometry.Select(g => g.Tag));
-            if (tags.IsSubsetOf(inSketch))
-                return sketch;
+            if (!sketchOfCurve.TryGetValue(curve.Tag, out var owner) || (sketch is not null && sketch.Tag != owner.Tag))
+                return null;
+            sketch = owner;
         }
 
-        return null;
+        return sketch;
     }
 }

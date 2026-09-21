@@ -1,7 +1,6 @@
 using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.Beads.Rules;
 using BANxOpen.Foundation.Core.RuleEngine;
-using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.SheetMetal.Common;
 
 namespace BANxOpen.SheetMetal.Tests.Beads;
@@ -19,7 +18,7 @@ public class BeadSpecValidatorTests
     [Fact]
     public void Validate_MatchingThicknessAndAllowedGrade_IsValid()
     {
-        var profile = new SheetMetalProfile(new BodyId("body-1"), "SM_BODY", Thickness: 0.02, MaterialGradeLabel: "2024-O");
+        var profile = new SheetMetalProfile(Thickness: 0.02, MaterialGradeLabel: "2024-O");
 
         var result = MakeValidator().Validate(profile, ValidRow);
 
@@ -30,7 +29,7 @@ public class BeadSpecValidatorTests
     [Fact]
     public void Validate_ThicknessMismatch_BlocksBeforeCheckingMaterial()
     {
-        var profile = new SheetMetalProfile(new BodyId("body-1"), "SM_BODY", Thickness: 0.05, MaterialGradeLabel: "5052-O");
+        var profile = new SheetMetalProfile(Thickness: 0.05, MaterialGradeLabel: "5052-O");
 
         var result = MakeValidator().Validate(profile, ValidRow);
 
@@ -43,7 +42,7 @@ public class BeadSpecValidatorTests
     [Fact]
     public void Validate_GradeMarkedNotAllowed_Blocks()
     {
-        var profile = new SheetMetalProfile(new BodyId("body-1"), "SM_BODY", Thickness: 0.02, MaterialGradeLabel: "5052-O");
+        var profile = new SheetMetalProfile(Thickness: 0.02, MaterialGradeLabel: "5052-O");
 
         var result = MakeValidator().Validate(profile, ValidRow);
 
@@ -54,7 +53,7 @@ public class BeadSpecValidatorTests
     [Fact]
     public void Validate_GradeNotAColumnAtAll_ReportsUnrecognizedNotJustDisallowed()
     {
-        var profile = new SheetMetalProfile(new BodyId("body-1"), "SM_BODY", Thickness: 0.02, MaterialGradeLabel: "6061-T6");
+        var profile = new SheetMetalProfile(Thickness: 0.02, MaterialGradeLabel: "6061-T6");
 
         var result = MakeValidator().Validate(profile, ValidRow);
 
@@ -65,7 +64,7 @@ public class BeadSpecValidatorTests
     [Fact]
     public void Validate_NoMaterialAssigned_Blocks()
     {
-        var profile = new SheetMetalProfile(new BodyId("body-1"), "SM_BODY", Thickness: 0.02, MaterialGradeLabel: null);
+        var profile = new SheetMetalProfile(Thickness: 0.02, MaterialGradeLabel: null);
 
         var result = MakeValidator().Validate(profile, ValidRow);
 

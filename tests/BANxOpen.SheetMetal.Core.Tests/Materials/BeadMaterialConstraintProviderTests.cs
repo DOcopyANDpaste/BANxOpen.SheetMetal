@@ -321,7 +321,7 @@ public class BeadMaterialConstraintProviderTests
         var grade = Table.GradeForPhysicalMaterial(materialName)!;
 
         var specDirection = new MaterialAllowedRule().Evaluate(new BeadValidationContext(
-            new SheetMetalProfile(BodyId, "SM_BODY", Thickness: 0.02, MaterialGradeLabel: grade), spec));
+            new SheetMetalProfile(Thickness: 0.02, MaterialGradeLabel: grade), spec));
 
         var materialDirection = Gate(Provider(new[] { Stamp("B1005010-1") }, spec), materialName);
 

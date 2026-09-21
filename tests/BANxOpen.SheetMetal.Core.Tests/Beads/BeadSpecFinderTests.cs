@@ -1,7 +1,6 @@
 using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.Beads.Rules;
 using BANxOpen.Foundation.Core.RuleEngine;
-using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.SheetMetal.Common;
 
 namespace BANxOpen.SheetMetal.Tests.Beads;
@@ -19,7 +18,7 @@ public class BeadSpecFinderTests
         var validator = new BeadSpecValidator(
             new IGateRule<BeadValidationContext, RuleOutcome>[] { new ThicknessMatchRule(), new MaterialAllowedRule() });
         var finder = new BeadSpecFinder(validator);
-        var profile = new SheetMetalProfile(new BodyId("body-1"), "SM_BODY", Thickness: 0.02, MaterialGradeLabel: "2024-O");
+        var profile = new SheetMetalProfile(Thickness: 0.02, MaterialGradeLabel: "2024-O");
 
         var rows = new[]
         {

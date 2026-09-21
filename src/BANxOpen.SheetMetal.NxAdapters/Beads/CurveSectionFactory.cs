@@ -23,7 +23,7 @@ public static class CurveSectionFactory
     }
 
     /// <summary>Fills an existing, empty Section with <paramref name="chain"/>, setting the part's tolerances on it.</summary>
-    public static void Fill(Part workPart, Section section, IReadOnlyList<NXObject> chain)
+    internal static void Fill(Part workPart, Section section, IReadOnlyList<NXObject> chain)
     {
         var curves = BaseCurvesOf(chain);
         var distanceTolerance = workPart.Preferences.Modeling.DistanceToleranceData;

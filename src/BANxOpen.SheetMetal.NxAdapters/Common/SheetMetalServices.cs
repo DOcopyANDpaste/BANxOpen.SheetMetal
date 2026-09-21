@@ -24,7 +24,7 @@ public sealed class SheetMetalServices
         IBeadSpecLookup specLookup,
         BeadSettings beadSettings,
         BeadTracebackService tracebackService,
-        BeadGeometryReader geometryReader,
+        IFeatureInventory featureInventory,
         SheetMetalPreferenceService preferenceService,
         SheetMetalStandardSelection standardSelection,
         IReadOnlyList<INxMaterialRuleModule> materialModules)
@@ -35,7 +35,7 @@ public sealed class SheetMetalServices
         SpecLookup = specLookup;
         BeadSettings = beadSettings;
         TracebackService = tracebackService;
-        GeometryReader = geometryReader;
+        FeatureInventory = featureInventory;
         PreferenceService = preferenceService;
         MaterialModules = materialModules;
     }
@@ -51,7 +51,9 @@ public sealed class SheetMetalServices
 
     public BeadTracebackService TracebackService { get; }
 
-    public BeadGeometryReader GeometryReader { get; }
+    /// <summary>The beads on a body and the SPECs they carry — what the bead constraint reads, shared so the bead
+    /// dialog reads the same.</summary>
+    public IFeatureInventory FeatureInventory { get; }
 
     /// <summary>Reads and syncs the work part's Sheet Metal Preferences.</summary>
     public SheetMetalPreferenceService PreferenceService { get; }
@@ -79,8 +81,7 @@ public sealed class SheetMetalServices
             var beadSettings = BeadSettings.Load(SheetMetalConfigLocator.BeadSettingsPath());
 
             var tracebackService = new BeadTracebackService(context);
-            var geometryReader = new BeadGeometryReader(context);
-            var inventory = new BeadFeatureInventory(context, tracebackService, geometryReader);
+            var inventory = new BeadFeatureInventory(context, tracebackService, new BeadGeometryReader(context));
             var preferenceService = new SheetMetalPreferenceService(context, materialTable);
             var standardSelection = new SheetMetalStandardSelection(materialTable);
 
@@ -96,7 +97,7 @@ public sealed class SheetMetalServices
 
             return BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices>.Success(new SheetMetalServices(
                 materialTable, specCache, specLookup, beadSettings,
-                tracebackService, geometryReader, preferenceService, standardSelection, materialModules));
+                tracebackService, inventory, preferenceService, standardSelection, materialModules));
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException or InvalidDataException
                                        or IOException or UnauthorizedAccessException)

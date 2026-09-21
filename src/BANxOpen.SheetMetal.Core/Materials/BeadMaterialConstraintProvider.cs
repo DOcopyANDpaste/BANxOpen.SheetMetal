@@ -80,15 +80,24 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
         var applicable = new List<ApplicableSpec>();
         var warnings = new List<(string Label, string Message)>();
 
-        foreach (var stamp in inventory.Stamps.Distinct())
+        foreach (var bead in BeadsOnBody.Resolve(inventory, _specs, _settings))
         {
-            applicable.Add(new ApplicableSpec(
-                stamp.StandardId, stamp.SpecId,
-                _specs.Find(stamp.StandardId, stamp.SpecId),
-                $"Bead SPEC {stamp.SpecId} (Standard {stamp.StandardId})"));
+            if (bead.IsStamped)
+            {
+                applicable.Add(new ApplicableSpec(
+                    bead.StandardId!, bead.SpecId!, bead.Spec, $"Bead SPEC {bead.SpecId} (Standard {bead.StandardId})"));
+            }
+            else if (bead.Spec is { } row)
+            {
+                applicable.Add(new ApplicableSpec(
+                    row.StandardId, row.SpecId, row,
+                    $"bead feature '{bead.Name}' (unstamped; geometry matches SPEC {row.SpecId}, Standard {row.StandardId})"));
+            }
+            else
+            {
+                warnings.Add(($"bead feature '{bead.Name}'", UnidentifiedMessage(bead)));
+            }
         }
-
-        IdentifyUnstamped(inventory.UnstampedFeatures, applicable, warnings);
 
         var constraints = new List<MaterialConstraint>();
 
@@ -127,56 +136,21 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
         return constraints;
     }
 
-    private void IdentifyUnstamped(
-        IReadOnlyList<UnstampedFeature> unstamped,
-        List<ApplicableSpec> applicable,
-        List<(string Label, string Message)> warnings)
+    private static string UnidentifiedMessage(BeadOnBody bead) => bead.Status switch
     {
-        if (unstamped.Count == 0)
-            return;
-
-        // Read once: an unstamped bead has no Standard, so every Standard is searched, and a body can carry
-        // several such beads.
-        var allSpecs = _specs.AllSpecs();
-
-        foreach (var feature in unstamped)
-        {
-            var label = $"bead feature '{feature.Name}'";
-
-            if (feature.Geometry is null)
-            {
-                warnings.Add((label,
-                    $"Bead feature '{feature.Name}' was not created by the bead tool and its geometry could not be " +
-                    "read, so its SPEC material restriction is not enforced. Re-apply it with the bead dialog to " +
-                    "record its SPEC."));
-                continue;
-            }
-
-            var match = BeadSpecMatcher.Match(feature.Geometry, allSpecs, _settings);
-
-            if (match.Single is { } row)
-            {
-                applicable.Add(new ApplicableSpec(
-                    row.StandardId, row.SpecId, row,
-                    $"bead feature '{feature.Name}' (unstamped; geometry matches SPEC {row.SpecId}, Standard {row.StandardId})"));
-            }
-            else if (match.IsAmbiguous)
-            {
-                var specs = string.Join(", ", match.Candidates.Select(c => c.SpecId));
-                warnings.Add((label,
-                    $"Bead feature '{feature.Name}' was not created by the bead tool and its geometry matches more " +
-                    $"than one SPEC ({specs}), so no SPEC material restriction is enforced for it. Re-apply it with " +
-                    "the bead dialog to record which SPEC it is."));
-            }
-            else
-            {
-                warnings.Add((label,
-                    $"Bead feature '{feature.Name}' was not created by the bead tool and its geometry matches no SPEC " +
-                    "in any Standard, so no SPEC material restriction is enforced for it. Re-apply it with the bead " +
-                    "dialog using a valid SPEC."));
-            }
-        }
-    }
+        BeadSpecStatus.GeometryUnreadable =>
+            $"Bead feature '{bead.Name}' was not created by the bead tool and its geometry could not be " +
+            "read, so its SPEC material restriction is not enforced. Re-apply it with the bead dialog to " +
+            "record its SPEC.",
+        BeadSpecStatus.Ambiguous =>
+            $"Bead feature '{bead.Name}' was not created by the bead tool and its geometry matches more " +
+            $"than one SPEC ({string.Join(", ", bead.Candidates.Select(c => c.SpecId))}), so no SPEC material " +
+            "restriction is enforced for it. Re-apply it with the bead dialog to record which SPEC it is.",
+        _ =>
+            $"Bead feature '{bead.Name}' was not created by the bead tool and its geometry matches no SPEC " +
+            "in any Standard, so no SPEC material restriction is enforced for it. Re-apply it with the bead " +
+            "dialog using a valid SPEC.",
+    };
 
     private MaterialConstraint ConstraintFor(ApplicableSpec spec)
     {

@@ -4,13 +4,16 @@ using BANxOpen.SheetMetal.Beads;
 namespace BANxOpen.SheetMetal.Materials;
 
 /// <summary>One feature found on a body, identified by the Standard and SPEC it was built to.</summary>
-public sealed record FeatureSpecStamp(string StandardId, string SpecId);
+/// <param name="FeatureKey">The feature's identity (its NX tag), so a caller can tell which bead this is.</param>
+/// <param name="Name">Feature name, for messages.</param>
+public sealed record FeatureSpecStamp(string StandardId, string SpecId, string FeatureKey = "", string Name = "");
 
 /// <summary>A bead on the body that carries no SPEC stamp — usually one built by hand in NX.</summary>
 /// <param name="Name">Feature name, for messages.</param>
 /// <param name="Geometry">Its measured shape, used to identify which SPEC it matches. Null when it could
 /// not be read.</param>
-public sealed record UnstampedFeature(string Name, BeadGeometry? Geometry);
+/// <param name="FeatureKey">As <see cref="FeatureSpecStamp.FeatureKey"/>.</param>
+public sealed record UnstampedFeature(string Name, BeadGeometry? Geometry, string FeatureKey = "");
 
 /// <summary>What sheet metal features a body carries, as far as the tool can tell.
 ///

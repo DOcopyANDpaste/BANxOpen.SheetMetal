@@ -116,17 +116,7 @@ public class BeadSpecCacheTests
         source.Workbook = null;
 
         Assert.Empty(cache.GetSpecs(Standard, BeadSpec));
-        Assert.Empty(cache.Refresh(Standard, BeadSpec));
         Assert.Equal(0, source.ReadCount);
-    });
-
-    [Fact]
-    public void Refresh_AlwaysReimportsRegardlessOfCache() => WithCache((source, cache, _) =>
-    {
-        cache.GetSpecs(Standard, BeadSpec);
-        cache.Refresh(Standard, BeadSpec);
-
-        Assert.Equal(2, source.ReadCount);
     });
 
     [Fact]

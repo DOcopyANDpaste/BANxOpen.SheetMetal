@@ -77,14 +77,6 @@ public sealed class BeadSpecCache
     internal static bool IsSpecDataFailure(Exception ex) =>
         ex is IOException or UnauthorizedAccessException or InvalidDataException;
 
-    /// <summary>Always re-imports from Excel, regardless of the cached write-time. Bound to the dialog's
-    /// manual refresh button for the case where a workbook was edited and saved with the same timestamp a
-    /// network share sometimes reports, or the user just wants to be sure.</summary>
-    public IReadOnlyList<BeadSpecRow> Refresh(StandardInfo standard, string beadSpecName) =>
-        _source.FindWorkbook(standard, beadSpecName) is { } workbookPath
-            ? Import(standard, workbookPath)
-            : Array.Empty<BeadSpecRow>();
-
     private IReadOnlyList<BeadSpecRow> LoadWorkbook(StandardInfo standard, string workbookPath)
     {
         var workbookWriteTimeUtc = File.GetLastWriteTimeUtc(workbookPath);

@@ -116,8 +116,6 @@ public sealed class ExcelBeadSpecParser
                 .Select(ItemText)
                 .ToList() ?? new List<string>();
 
-            WriteToTemp($"[ExcelBeadSpecParser] Reading sheet '{firstSheet.Name?.Value}'.");
-
             var sheet = new SortedDictionary<int, Dictionary<int, string>>();
             var nextRow = 1;
             foreach (var row in worksheetPart.Worksheet.Descendants<Row>())
@@ -140,44 +138,9 @@ public sealed class ExcelBeadSpecParser
                 sheet[rowNumber] = cells;
             }
 
-            WriteSheetToTemp(sheet);
-
             return sheet;
         }
     }
-
-    // ---- write to temp (temporary logging; remove once the header-row issue is found) ----
-    private const string TempLogPath = @"C:\temp\ExcelBeadSpecParser.txt";
-
-    private static void WriteToTemp(string message)
-    {
-        try
-        {
-            Directory.CreateDirectory(@"C:\temp");
-            File.AppendAllText(TempLogPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}{Environment.NewLine}");
-        }
-        catch (Exception)
-        {
-            // Logging must never break the import.
-        }
-    }
-
-    /// <summary>Every row as the parser read it: one line per row (row 1 upward, empty rows as empty lines),
-    /// cell values comma-separated from column A to the row's last non-empty column.</summary>
-    private static void WriteSheetToTemp(SortedDictionary<int, Dictionary<int, string>> sheet)
-    {
-        var lastRow = sheet.Count == 0 ? 0 : sheet.Keys.Max();
-        var lines = new List<string>();
-        for (var r = 1; r <= lastRow; r++)
-        {
-            var cells = sheet.TryGetValue(r, out var found) ? found : new Dictionary<int, string>();
-            var lastCol = cells.Count == 0 ? 0 : cells.Keys.Max();
-            lines.Add(string.Join(",", Enumerable.Range(1, lastCol).Select(c => Text(cells, c))));
-        }
-
-        WriteToTemp($"[ExcelBeadSpecParser] Sheet contents ({lastRow} rows):{Environment.NewLine}{string.Join(Environment.NewLine, lines)}");
-    }
-    // ---- end write to temp ----
 
     private static string CellText(Cell cell, IReadOnlyList<string> sharedStrings)
     {

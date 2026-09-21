@@ -46,4 +46,29 @@ public class AllowedGradesAtTests
     {
         Assert.Empty(BeadSpecFinder.AllowedGradesAt(new[] { Row("A", 0.02) }, 0.02));
     }
+
+    [Fact]
+    public void GradesAllowedByAll_is_unrestricted_with_no_SPECs()
+    {
+        Assert.Null(BeadSpecFinder.GradesAllowedByAll(Array.Empty<BeadSpecRow>(), 0.02));
+    }
+
+    [Fact]
+    public void GradesAllowedByAll_keeps_only_grades_every_SPEC_allows()
+    {
+        var grades = BeadSpecFinder.GradesAllowedByAll(
+            new[] { Row("A", 0.02, "2024-O", "5052-O"), Row("B", 0.02, "5052-O", "7075-T6") }, thickness: 0.02);
+
+        Assert.Equal(new[] { "5052-O" }, grades);
+    }
+
+    [Fact]
+    public void GradesAllowedByAll_allows_nothing_when_a_SPEC_is_for_another_thickness()
+    {
+        var grades = BeadSpecFinder.GradesAllowedByAll(
+            new[] { Row("A", 0.02, "2024-O"), Row("B", 0.05, "2024-O") }, thickness: 0.02);
+
+        Assert.NotNull(grades);
+        Assert.Empty(grades!);
+    }
 }

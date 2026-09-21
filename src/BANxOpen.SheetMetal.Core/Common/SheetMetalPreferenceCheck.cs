@@ -42,7 +42,7 @@ public static class SheetMetalPreferenceCheck
     /// SPEC accepts too.</summary>
     public const double ThicknessTolerance = ThicknessMatchRule.ToleranceInches;
 
-    public static bool ThicknessMatches(double a, double b) => Math.Abs(a - b) <= ThicknessTolerance;
+    public static bool ThicknessMatches(double a, double b) => ThicknessMatchRule.Matches(a, b);
 
     /// <param name="bodyPhysicalMaterialName">The body's physical material, or null when it has none.</param>
     /// <param name="bodyThickness">In part units.</param>
