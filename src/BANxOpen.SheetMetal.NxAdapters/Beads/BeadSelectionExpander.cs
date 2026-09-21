@@ -1,6 +1,7 @@
 using NXOpen;
 using NXOpen.Features;
 using BANxOpen.Foundation.NxAdapters;
+using BANxOpen.SheetMetal.Beads;
 
 namespace BANxOpen.SheetMetal.NxAdapters.Beads;
 
@@ -23,8 +24,9 @@ public sealed record ExpandedSelection(
 
 /// <summary>Turns what the user picked in the bead dialog's two selection blocks into the items it works on.
 ///
-/// The curve block (a Super Section) collects curves, including curves of a sketch drawn on the fly. Each section
-/// it returns is one chain, and one chain becomes one bead — the rule <see cref="BeadFeatureService"/> builds by.
+/// The curve block (a Super Section) collects curves, including curves of a sketch drawn on the fly. What it returns
+/// is split into connected chains (<see cref="CurveChainGrouper"/>), and one chain becomes one bead — the rule
+/// <see cref="BeadFeatureService"/> builds by.
 /// The feature block picks existing Bead features; a feature that is not a Bead is rejected here rather than left to
 /// fail later.</summary>
 public sealed class BeadSelectionExpander
@@ -43,7 +45,9 @@ public sealed class BeadSelectionExpander
         var seenChains = new HashSet<string>();
         var seenFeatures = new HashSet<Tag>();
 
-        void AddChain(IReadOnlyList<NXObject> curves, string source)
+        // Each source is split into its connected chains: a chain is one bead, so two separate lines picked
+        // together are two beads, not one bead NX cannot build.
+        void AddChains(IReadOnlyList<NXObject> curves, string source)
         {
             if (curves.Count == 0)
             {
@@ -51,6 +55,16 @@ public sealed class BeadSelectionExpander
                 return;
             }
 
+            var chains = SplitIntoChains(curves);
+            if (chains.Count > 1)
+                notes.Add($"{source}: {curves.Count} curve(s) split into {chains.Count} connected chain(s)");
+
+            foreach (var chain in chains)
+                AddChain(chain, source);
+        }
+
+        void AddChain(IReadOnlyList<NXObject> curves, string source)
+        {
             var key = string.Join(",", curves.Select(c => c.Tag.ToString()).OrderBy(t => t, StringComparer.Ordinal));
             if (!seenChains.Add(key))
             {
@@ -62,19 +76,19 @@ public sealed class BeadSelectionExpander
             notes.Add($"{source}: chain of {curves.Count} curve(s)");
         }
 
-        // VERIFY: which objects SuperSection.GetSelectedObjects() returns. A Section is read as one chain; bare
-        // curves, if that is what comes back, are taken together as one chain.
+        // VERIFY: which objects SuperSection.GetSelectedObjects() returns. A Section's curves and bare curves, if
+        // that is what comes back, are each split into their connected chains.
         var looseCurves = new List<NXObject>();
         foreach (var item in curveBlockObjects)
         {
             switch (item)
             {
                 case Section section:
-                    AddChain(CurvesOf(section, rejected), $"Section {section.JournalIdentifier}");
+                    AddChains(CurvesOf(section, rejected), $"Section {section.JournalIdentifier}");
                     break;
 
                 case Sketch sketch:
-                    AddChain(CurvesOf(sketch), $"Sketch {sketch.Name}");
+                    AddChains(CurvesOf(sketch), $"Sketch {sketch.Name}");
                     break;
 
                 case Curve curve:
@@ -88,7 +102,7 @@ public sealed class BeadSelectionExpander
         }
 
         if (looseCurves.Count > 0)
-            AddChain(looseCurves, "Bare curves from the curve block");
+            AddChains(looseCurves, "Bare curves from the curve block");
 
         foreach (var item in featureBlockObjects)
         {
@@ -104,6 +118,56 @@ public sealed class BeadSelectionExpander
         }
 
         return new ExpandedSelection(items, rejected, notes);
+    }
+
+    /// <summary>The curves as connected chains, by <see cref="CurveChainGrouper"/> at the part's distance tolerance.
+    /// A curve whose ends cannot be read is kept as a chain of its own rather than dropped: the user picked it,
+    /// and the bead builder then says why it cannot be used.</summary>
+    private List<IReadOnlyList<NXObject>> SplitIntoChains(IReadOnlyList<NXObject> curves)
+    {
+        if (curves.Count == 1)
+            return new List<IReadOnlyList<NXObject>> { curves };
+
+        var tolerance = _context.WorkPart.Preferences.Modeling.DistanceToleranceData;
+        var ends = new List<CurveEnds>();
+        var unreadable = new List<NXObject>();
+
+        for (var i = 0; i < curves.Count; i++)
+        {
+            if (TryReadEnds(curves[i], out var start, out var end))
+                ends.Add(new CurveEnds(i, start[0], start[1], start[2], end[0], end[1], end[2]));
+            else
+                unreadable.Add(curves[i]);
+        }
+
+        var chains = CurveChainGrouper.Group(ends, tolerance)
+            .Select(ids => (IReadOnlyList<NXObject>)ids.Select(id => curves[id]).ToList())
+            .ToList();
+
+        chains.AddRange(unreadable.Select(curve => (IReadOnlyList<NXObject>)new[] { curve }));
+        return chains;
+    }
+
+    private bool TryReadEnds(NXObject curve, out double[] start, out double[] end)
+    {
+        start = new double[3];
+        end = new double[3];
+        var tangent = new double[3];
+        var normal = new double[3];
+        var binormal = new double[3];
+
+        try
+        {
+            // Parameters 0 and 1 are the curve's normalised start and end.
+            _context.UFSession.Modl.AskCurveProps(curve.Tag, 0.0, start, tangent, normal, binormal, out _, out _);
+            _context.UFSession.Modl.AskCurveProps(curve.Tag, 1.0, end, tangent, normal, binormal, out _, out _);
+            return true;
+        }
+        catch (NXException ex)
+        {
+            _context.Log.Warn($"Could not read the end points of '{curve.JournalIdentifier}': NX {ex.ErrorCode}: {ex.Message}");
+            return false;
+        }
     }
 
     /// <summary>The section's output curves. Anything else it outputs (an edge, when the block's rules allow one) is
