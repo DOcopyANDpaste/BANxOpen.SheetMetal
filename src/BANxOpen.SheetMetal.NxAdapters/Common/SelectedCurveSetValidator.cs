@@ -5,17 +5,14 @@ using BANxOpen.Foundation.NxAdapters;
 
 namespace BANxOpen.SheetMetal.NxAdapters.Common;
 
-/// <summary>Confirms every selected curve/edge/feature resolves to the same sheet metal body before
-/// anything else runs — a single chosen SPEC's validation (thickness/material) only means anything against
-/// one profile.
+/// <summary>Confirms every selected curve/Bead feature resolves to the same sheet metal body before anything
+/// else runs — a single chosen SPEC's validation (thickness/material) only means anything against one profile.
 ///
-/// A directly-selected <see cref="Body"/> is the answer. An <see cref="Edge"/> resolves to its owning body
-/// directly via <c>Edge.GetBody()</c>. A directly-selected <see cref="Feature"/> (per the "select the bead
-/// feature itself" case) resolves through <see cref="FeatureBodyResolver"/>. A free sketch <see cref="Curve"/>
-/// has no such relationship anywhere
-/// in the NXOpen API, so it's resolved to "the part's one sheet metal body" when there is exactly one — a
-/// part with more than one sheet metal body and a sketch-curve selection can't be disambiguated this way,
-/// which is a known v1 limitation reported back as a clear error rather than silently guessing.</summary>
+/// The bead dialog selects Bead features and curves (a picked sketch has already been expanded into its curves).
+/// A <see cref="Feature"/> resolves through <see cref="FeatureBodyResolver"/>. A <see cref="Curve"/> has no owning
+/// body anywhere in the NXOpen API, so it's resolved to "the part's one sheet metal body" when there is exactly
+/// one — a part with more than one sheet metal body and a curve selection can't be disambiguated this way, which
+/// is a known v1 limitation reported back as a clear error rather than silently guessing.</summary>
 public sealed class SelectedCurveSetValidator
 {
     private readonly NxSessionContext _context;
@@ -34,16 +31,6 @@ public sealed class SelectedCurveSetValidator
         {
             switch (item)
             {
-                // The dialog lets the user point at the sheet metal body itself instead of its curves, which is
-                // the one case where the answer needs no resolving at all.
-                case Body selectedBody:
-                    resolvedBodyTags.Add(selectedBody.Tag);
-                    break;
-
-                case Edge edge:
-                    resolvedBodyTags.Add(edge.GetBody().Tag);
-                    break;
-
                 case Feature feature:
                     var body = FeatureBodyResolver.Resolve(feature);
                     if (body is null)
@@ -57,7 +44,7 @@ public sealed class SelectedCurveSetValidator
                     break;
 
                 default:
-                    // Free sketch curves and anything else with no direct owning-body relationship.
+                    // Curves: no owning-body relationship.
                     needsSketchCurveFallback = true;
                     break;
             }
@@ -74,9 +61,9 @@ public sealed class SelectedCurveSetValidator
             {
                 return OperationResult<Body>.Fail(
                     "AMBIGUOUS_SKETCH_CURVE_BODY",
-                    "One or more selected curves are sketch curves (not body edges), and this part has " +
+                    "One or more curves are selected, and this part has " +
                     $"{sheetmetalBodies.Count} sheet metal bodies, so the owning body can't be determined. " +
-                    "Select curves from a part with a single sheet metal body, or select body edges instead.");
+                    "Select curves in a part with a single sheet metal body, or select existing bead features.");
             }
 
             resolvedBodyTags.Add(sheetmetalBodies[0].Tag);

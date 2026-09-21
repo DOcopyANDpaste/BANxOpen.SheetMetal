@@ -44,8 +44,12 @@ public sealed class SheetMetalSettings
         if (string.IsNullOrWhiteSpace(file.MaterialTablePath))
             return Default;
 
+        var tablePath = file.MaterialTablePath;
+        if (Path.IsPathRooted(tablePath))
+            return new SheetMetalSettings(Path.GetFullPath(tablePath));
+
         var settingsDirectory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? "";
-        return new SheetMetalSettings(Path.GetFullPath(Path.Combine(settingsDirectory, file.MaterialTablePath!)));
+        return new SheetMetalSettings(Path.GetFullPath(Path.Combine(settingsDirectory, tablePath)));
     }
 
     private sealed class SettingsFile

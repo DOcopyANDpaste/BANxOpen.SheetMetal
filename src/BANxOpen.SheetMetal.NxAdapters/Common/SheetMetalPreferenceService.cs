@@ -76,6 +76,15 @@ public sealed class SheetMetalPreferenceService : ISheetMetalPreferenceReader
             _context.Log.Warn($"GetBodyThickness failed for '{body.Name}': NX {ex.ErrorCode}: {ex.Message}");
         }
 
+        var read = ReadForPart();
+        return read.Preference is { } preference ? SheetMetalPreferenceRead.Of(preference, bodyThickness) : read;
+    }
+
+    /// <summary>The work part's Sheet Metal Preferences, with no body involved: they belong to the part, so a dialog
+    /// can show them before anything is selected. <see cref="ReadFor(Body)"/> is this plus the body's own gate and
+    /// thickness.</summary>
+    public SheetMetalPreferenceRead ReadForPart()
+    {
         try
         {
             var preferences = _context.WorkPart.Preferences.SheetMetalPreferences;
@@ -94,7 +103,7 @@ public sealed class SheetMetalPreferenceService : ISheetMetalPreferenceReader
                 CountSheetMetalBodies(),
                 _table.Find(materialName));
 
-            return SheetMetalPreferenceRead.Of(preference, bodyThickness);
+            return SheetMetalPreferenceRead.Of(preference);
         }
         catch (NXException ex)
         {

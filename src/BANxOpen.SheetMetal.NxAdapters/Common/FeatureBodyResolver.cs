@@ -9,9 +9,7 @@ namespace BANxOpen.SheetMetal.NxAdapters.Common;
 /// selected Bead feature — if this comes back null where it shouldn't, check what <c>GetEntities()</c> actually
 /// returns for a Bead feature in your NX version (it may be Body-typed directly, in which case this can simplify).
 ///
-/// Shared by <see cref="SelectedCurveSetValidator"/> (which body did the user point at?) and
-/// <see cref="Beads.BeadSelectionExpander"/> (which of the part's beads sit on this body?) so the two cannot
-/// disagree about what "this feature's body" means.</summary>
+/// Used by <see cref="SelectedCurveSetValidator"/> to find which body a selected Bead feature is on.</summary>
 public static class FeatureBodyResolver
 {
     public static Body? Resolve(Feature feature)
