@@ -138,7 +138,7 @@ public sealed class BeadFeatureService
         // MinimumToolClearance intentionally left alone — NX's own default stands, per the requirement.
 
         if (existingFeature is null)
-            FillChainSection(builder.Section, chain);
+            SetChainSection(builder, chain);
     }
 
     /// <summary>Null when NX accepts the builder's data, else why not.</summary>
@@ -154,30 +154,15 @@ public sealed class BeadFeatureService
 
     private static string Literal(double value) => value.ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>Fills the builder's own pre-created Section the way the interactive dialog does: part modeling
-    /// tolerances (chaining = 0.95 × distance, as NX records it) and curves-only. A fresh parameterless
-    /// <c>Sections.CreateSection()</c> assigned over it carries zero tolerances and fails validation.</summary>
-    private void FillChainSection(Section section, IReadOnlyList<NXObject> chain)
+    /// <summary>Puts the chain into the builder's Section. A create-mode builder can hand back no Section at all,
+    /// so one is then created and assigned; either way it carries the part's tolerances (see
+    /// <see cref="CurveSectionFactory"/>).</summary>
+    private void SetChainSection(BeadBuilder builder, IReadOnlyList<NXObject> chain)
     {
-        if (chain.Count == 0)
-            throw new ArgumentException("A bead needs at least one curve.", nameof(chain));
-
-        var curves = new List<IBaseCurve>();
-        foreach (var item in chain)
-        {
-            if (item is not IBaseCurve baseCurve)
-                throw new ArgumentException($"Selected object is not a curve or edge: {item.GetType().Name}", nameof(chain));
-            curves.Add(baseCurve);
-        }
-
-        var workPart = _context.WorkPart;
-        var distanceTolerance = workPart.Preferences.Modeling.DistanceToleranceData;
-        section.DistanceTolerance = distanceTolerance;
-        section.ChainingTolerance = distanceTolerance * 0.95;
-        section.SetAllowedEntityTypes(Section.AllowTypes.OnlyCurves);
-
-        var rule = workPart.ScRuleFactory.CreateRuleBaseCurveDumb(curves.ToArray());
-        section.AddToSection(new SelectionIntentRule[] { rule }, chain[0], null, null, new Point3d(0, 0, 0), Section.Mode.Create);
+        if (builder.Section is { } section)
+            CurveSectionFactory.Fill(_context.WorkPart, section, chain);
+        else
+            builder.Section = CurveSectionFactory.Create(_context.WorkPart, chain);
     }
 }
 
