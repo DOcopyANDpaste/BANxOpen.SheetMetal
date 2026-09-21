@@ -10,8 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Builds test workbooks only; the parser itself reads with DocumentFormat.OpenXml. -->
-    <PackageReference Include="ClosedXML" Version="0.104.1" />
+    <!-- Builds test workbooks only; the parser itself reads with DocumentFormat.OpenXml. 0.95.4 is the last
+         ClosedXML that accepts OpenXml 2.9.0, so the tests run the parser on the same OpenXml NX loads. -->
+    <PackageReference Include="ClosedXML" Version="0.95.4" />
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.5.3" />

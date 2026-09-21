@@ -23,8 +23,10 @@
     <!-- Reads the SPEC workbooks (SpecData\ExcelBeadSpecParser.cs). Pure managed, no NXOpen dependency,
          so it can live here and be unit-tested without an NX session. OpenXml rather than ClosedXML: ClosedXML's
          dependencies (System.Memory/Buffers/Numerics.Vectors, SixLabors.Fonts) need binding redirects, which NX
-         never reads from a plug-in; OpenXml references framework assemblies only. -->
-    <PackageReference Include="DocumentFormat.OpenXml" Version="3.0.1" />
+         never reads from a plug-in; OpenXml references framework assemblies only.
+         Pinned to 2.9.0, the version NX itself ships (NXBIN\managed): inside NX that copy is the one loaded, and a
+         plug-in built against 3.x then reads shared-string cells back empty. Keep in step with the NX release. -->
+    <PackageReference Include="DocumentFormat.OpenXml" Version="[2.9.0]" />
   </ItemGroup>
 
   <!--

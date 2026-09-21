@@ -120,7 +120,7 @@ public class ExcelBeadSpecParserTests
         var sheet = workbook.Worksheets.Add("Sheet1");
         WriteHeader(sheet, 1);
         sheet.Cell(1, 6).Value = "";
-        sheet.Cell(1, 6).CreateRichText().AddText("TICH").SetBold().AddText("KNESS");
+        sheet.Cell(1, 6).RichText.AddText("TICH").SetBold().AddText("KNESS");
         sheet.Cell(2, 1).Value = "B1005010-1";
         for (var c = 2; c <= 6; c++)
             sheet.Cell(2, c).Value = 0.5;
