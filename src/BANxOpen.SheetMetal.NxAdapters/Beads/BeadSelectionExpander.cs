@@ -170,28 +170,38 @@ public sealed class BeadSelectionExpander
         }
     }
 
-    /// <summary>The section's output curves. Anything else it outputs (an edge, when the block's rules allow one) is
-    /// rejected: beads are built from curves only.</summary>
+    /// <summary>The curves the section was built from — the sketch's own lines, not <c>GetOutputCurves</c>, which
+    /// returns copies the section creates internally. A bead on a single line is only accepted when that line is
+    /// part of a sketch, and a copy is not; the traceback to an existing bead also needs the real curves. Anything
+    /// else the section holds (an edge, when the block's rules allow one) is rejected: beads are built from curves
+    /// only.</summary>
     private List<NXObject> CurvesOf(Section section, List<NXObject> rejected)
     {
-        NXObject[] output;
+        var curves = new List<NXObject>();
+        var seen = new HashSet<Tag>();
         try
         {
-            section.GetOutputCurves(out output);
+            section.GetSectionData(out var sectionData);
+            foreach (var data in sectionData)
+            {
+                data.GetSectionElementsData(out var elements);
+                foreach (var element in elements)
+                {
+                    element.GetSectionElementData1(out var parent, out _, out _, out _, out _);
+                    if (parent is null || !seen.Add(parent.Tag))
+                        continue;
+
+                    if (parent is Curve)
+                        curves.Add(parent);
+                    else
+                        rejected.Add(parent);
+                }
+            }
         }
         catch (NXException ex)
         {
             _context.Log.Warn($"Could not read the curves of section '{section.JournalIdentifier}': NX {ex.ErrorCode}: {ex.Message}");
             return new List<NXObject>();
-        }
-
-        var curves = new List<NXObject>();
-        foreach (var item in output)
-        {
-            if (item is Curve)
-                curves.Add(item);
-            else
-                rejected.Add(item);
         }
 
         return curves;
