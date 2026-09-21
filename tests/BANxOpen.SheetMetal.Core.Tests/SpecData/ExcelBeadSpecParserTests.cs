@@ -97,4 +97,81 @@ public class ExcelBeadSpecParserTests
         var ex = Assert.Throws<InvalidDataException>(() => parser.Parse("B1005010", "B1005010", stream));
         Assert.Contains("THICKNESS", ex.Message);
     }
+
+    private static Stream Save(XLWorkbook workbook)
+    {
+        var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        stream.Position = 0;
+        return stream;
+    }
+
+    private static void WriteHeader(IXLWorksheet sheet, int row)
+    {
+        string[] headers = { "SPEC", "(R) & RAD S", "W", "H", "RAD P", "THICKNESS", "2024-O" };
+        for (var c = 0; c < headers.Length; c++)
+            sheet.Cell(row, c + 1).Value = headers[c];
+    }
+
+    [Fact]
+    public void Parse_RichTextHeader_IsReadAsItsJoinedText()
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.Worksheets.Add("Sheet1");
+        WriteHeader(sheet, 1);
+        sheet.Cell(1, 6).Value = "";
+        sheet.Cell(1, 6).CreateRichText().AddText("TICH").SetBold().AddText("KNESS");
+        sheet.Cell(2, 1).Value = "B1005010-1";
+        for (var c = 2; c <= 6; c++)
+            sheet.Cell(2, c).Value = 0.5;
+        sheet.Cell(2, 7).Value = "YES";
+
+        using var stream = Save(workbook);
+        var rows = new ExcelBeadSpecParser().Parse("STD", "B1005010", stream);
+
+        Assert.Single(rows);
+        Assert.Equal(0.5, rows[0].Thickness);
+        Assert.True(rows[0].AllowedMaterialGrades["2024-O"]);
+    }
+
+    [Fact]
+    public void Parse_TextInANumberColumn_ThrowsNamingTheCell()
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.Worksheets.Add("Sheet1");
+        WriteHeader(sheet, 1);
+        sheet.Cell(2, 1).Value = "B1005010-1";
+        for (var c = 2; c <= 6; c++)
+            sheet.Cell(2, c).Value = 0.5;
+        sheet.Cell(2, 3).Value = "wide";
+
+        using var stream = Save(workbook);
+
+        var ex = Assert.Throws<InvalidDataException>(() => new ExcelBeadSpecParser().Parse("STD", "B1005010", stream));
+        Assert.Contains("C2", ex.Message);
+    }
+
+    [Fact]
+    public void Parse_ReadsOnlyTheFirstSheetAndStopsAtTheFirstEmptySpec()
+    {
+        using var workbook = new XLWorkbook();
+        var first = workbook.Worksheets.Add("Specs");
+        WriteHeader(first, 1);
+        first.Cell(2, 1).Value = "B1005010-1";
+        for (var c = 2; c <= 6; c++)
+            first.Cell(2, c).Value = 0.5;
+        // Row 3 left empty: the list ends there, whatever follows.
+        first.Cell(4, 1).Value = "B1005010-9";
+        for (var c = 2; c <= 6; c++)
+            first.Cell(4, c).Value = 0.5;
+
+        var second = workbook.Worksheets.Add("Notes");
+        WriteHeader(second, 1);
+        second.Cell(2, 1).Value = "NOT-A-SPEC";
+
+        using var stream = Save(workbook);
+        var rows = new ExcelBeadSpecParser().Parse("STD", "B1005010", stream);
+
+        Assert.Equal(new[] { "B1005010-1" }, rows.Select(r => r.SpecId));
+    }
 }

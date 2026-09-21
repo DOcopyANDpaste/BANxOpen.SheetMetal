@@ -8,8 +8,9 @@ using BANxOpen.Foundation.NxAdapters;
 
 namespace BANxOpen.SheetMetal.NxAdapters.Beads;
 
-/// <summary>Creates or updates one Bead feature from a single curve/edge, per the plan's "one selected
-/// curve maps to one Bead feature" rule (no chaining). Cross section is fixed to Circular and end type
+/// <summary>Creates or updates one Bead feature from one chain of curves: the bead dialog's rule is one chain
+/// collected in its curve selection maps to one Bead feature, and a single curve is simply a chain of one.
+/// Cross section is fixed to Circular and end type
 /// fixed to Formed (per the requirements); minimum tool clearance is never touched, so NX's own default
 /// stands. Depth/Radius/DieRadius are bound to named expressions via <see cref="ExpressionService"/>
 /// rather than set as literals.
@@ -32,7 +33,8 @@ public sealed class BeadFeatureService
 
     /// <summary>Create-mode when <paramref name="existingFeature"/> is null; edit-mode (re-opens the
     /// existing feature's builder in place, curve/Section left untouched) otherwise.</summary>
-    public OperationResult<Feature> CreateOrUpdate(NXObject curve, BeadSpecRow spec, Feature? existingFeature)
+    /// <param name="chain">The curves of the bead's section. Only read in create-mode.</param>
+    public OperationResult<Feature> CreateOrUpdate(IReadOnlyList<NXObject> chain, BeadSpecRow spec, Feature? existingFeature)
     {
         var sheetmetalManager = _context.WorkPart.Features.SheetmetalManager;
         BeadBuilder builder;
@@ -53,7 +55,7 @@ public sealed class BeadFeatureService
             // MinimumToolClearance intentionally left alone — NX's own default stands, per the requirement.
 
             if (existingFeature is null)
-                builder.Section = BuildSingleCurveSection(curve);
+                builder.Section = BuildChainSection(chain);
 
             // The builder's own Height/Radius/DieRadius are pre-created NXOpen.Expression handles (owned by
             // the builder, not settable as objects) — the unit is read off Height so our named expressions
@@ -87,16 +89,24 @@ public sealed class BeadFeatureService
         }
     }
 
-    private Section BuildSingleCurveSection(NXObject curve)
+    private Section BuildChainSection(IReadOnlyList<NXObject> chain)
     {
-        if (curve is not IBaseCurve baseCurve)
-            throw new ArgumentException($"Selected object is not a curve or edge: {curve.GetType().Name}", nameof(curve));
+        if (chain.Count == 0)
+            throw new ArgumentException("A bead needs at least one curve.", nameof(chain));
+
+        var curves = new List<IBaseCurve>();
+        foreach (var item in chain)
+        {
+            if (item is not IBaseCurve baseCurve)
+                throw new ArgumentException($"Selected object is not a curve or edge: {item.GetType().Name}", nameof(chain));
+            curves.Add(baseCurve);
+        }
 
         var workPart = _context.WorkPart;
         var section = workPart.Sections.CreateSection();
-        var rule = workPart.ScRuleFactory.CreateRuleBaseCurveDumb(new[] { baseCurve });
+        var rule = workPart.ScRuleFactory.CreateRuleBaseCurveDumb(curves.ToArray());
 
-        section.AddToSection(new SelectionIntentRule[] { rule }, curve, null, null, new Point3d(0, 0, 0), Section.Mode.Create);
+        section.AddToSection(new SelectionIntentRule[] { rule }, chain[0], null, null, new Point3d(0, 0, 0), Section.Mode.Create);
         return section;
     }
 }

@@ -21,8 +21,10 @@
 
   <ItemGroup>
     <!-- Reads the SPEC workbooks (SpecData\ExcelBeadSpecParser.cs). Pure managed, no NXOpen dependency,
-         so it can live here and be unit-tested without an NX session. -->
-    <PackageReference Include="ClosedXML" Version="0.104.1" />
+         so it can live here and be unit-tested without an NX session. OpenXml rather than ClosedXML: ClosedXML's
+         dependencies (System.Memory/Buffers/Numerics.Vectors, SixLabors.Fonts) need binding redirects, which NX
+         never reads from a plug-in; OpenXml references framework assemblies only. -->
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.0.1" />
   </ItemGroup>
 
   <!--
