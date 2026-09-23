@@ -109,6 +109,53 @@ public class BeadMaterialConstraintProviderTests
         Assert.Contains("B1005010-1", message);
     }
 
+    // ---- a SPEC is a family of rows, one per thickness ----
+
+    /// <summary>The SPEC allows 7075-T6 at 0.02 but not at 0.05 — the B1005010-1T shape. This gate is asked about a
+    /// physical material, which carries no thickness (the Material Table row, and so the sheet's thickness, is
+    /// chosen afterwards), so the only honest answer is "some row of the SPEC allows it". Taking an arbitrary row
+    /// instead used to give the same answer by luck here and the wrong one whenever file order differed.</summary>
+    [Fact]
+    public void Allows_a_grade_some_thickness_of_the_SPEC_permits()
+    {
+        var provider = Provider(
+            new[] { Stamp("B1005010-1T") },
+            Spec("B1005010-1T", new[] { "2024-O", "7075-T6" }, thickness: 0.02),
+            Spec("B1005010-1T", new[] { "2024-O" }, thickness: 0.05));
+
+        Assert.Equal(RuleDecision.Allow, Gate(provider, "Aluminum 7075-T6").Decision);
+    }
+
+    [Fact]
+    public void Blocks_a_grade_no_thickness_of_the_SPEC_permits()
+    {
+        var provider = Provider(
+            new[] { Stamp("B1005010-2") },
+            Spec("B1005010-2", new[] { "2024-O" }, thickness: 0.02),
+            Spec("B1005010-2", new[] { "2024-O" }, thickness: 0.05));
+
+        var outcome = Gate(provider, "Aluminum 7075-T6");
+
+        Assert.Equal(RuleDecision.Block, outcome.Decision);
+        Assert.Equal(BeadMaterialConstraintProvider.NotAllowedCode, outcome.ReasonCode);
+        Assert.Contains("at any thickness", outcome.Message);
+    }
+
+    /// <summary>A family is one SPEC, so it is one constraint — not one per thickness, which would report the same
+    /// refusal several times over.</summary>
+    [Fact]
+    public void A_family_contributes_one_constraint_not_one_per_thickness()
+    {
+        var provider = Provider(
+            new[] { Stamp("B1005010-2") },
+            Spec("B1005010-2", new[] { "2024-O" }, thickness: 0.02),
+            Spec("B1005010-2", new[] { "2024-O" }, thickness: 0.05),
+            Spec("B1005010-2", new[] { "2024-O" }, thickness: 0.063));
+
+        // One grade-recognition constraint plus one per-SPEC constraint.
+        Assert.Equal(2, provider.ConstraintsFor(BodyId).Count);
+    }
+
     [Fact]
     public void Blocks_an_unmapped_material_rather_than_letting_it_through_unchecked()
     {
@@ -353,8 +400,10 @@ public class BeadMaterialConstraintProviderTests
 
         public FakeSpecLookup(IEnumerable<BeadSpecRow> rows) => _rows = rows.ToList();
 
-        public BeadSpecRow? Find(string standardId, string specId) =>
-            _rows.FirstOrDefault(r => r.StandardId == standardId && r.SpecId == specId);
+        public IReadOnlyList<BeadSpecRow> FindAll(string standardId, string specId) =>
+            _rows.Where(r => r.StandardId == standardId && r.SpecId == specId)
+                .OrderBy(r => r.Thickness)
+                .ToList();
 
         public IReadOnlyList<BeadSpecRow> AllSpecs() => _rows;
     }

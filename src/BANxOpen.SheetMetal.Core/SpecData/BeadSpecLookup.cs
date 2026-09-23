@@ -9,15 +9,21 @@ namespace BANxOpen.SheetMetal.SpecData;
 /// on disk.</summary>
 public interface IBeadSpecLookup
 {
-    /// <summary>The row for this Standard and SPEC, or null when it cannot be found — the SPEC was retired
-    /// from its workbook after parts were built to it, the Standard left the sheet metal material standards file, or the spec data could
-    /// not be read at all. Callers must treat null as "unverifiable", not "unrestricted".
+    /// <summary>Every row of this Standard's SPEC family, ordered by thickness. Empty when the family cannot be
+    /// found — the SPEC was retired from its workbook after parts were built to it, the Standard left the sheet metal
+    /// material standards file, or the spec data could not be read at all. Callers must treat empty as
+    /// "unverifiable", not "unrestricted".
+    ///
+    /// A SPEC id names a FAMILY of rows, not one row: a workbook carries the same SPEC id once per sheet thickness,
+    /// with its own driving values and its own allowed-grade columns. Which row applies depends on the thickness of
+    /// the sheet the bead sits in, which a stamp does not record and which changes when the part is re-thicknessed —
+    /// so the family is what is resolved here, and the caller picks the row (<c>BeadOnBody.SpecAt</c>).
     ///
     /// Searches every bead SPEC workbook the Standard holds, since a stamp records the SPEC id but not which
-    /// workbook it came from. SPEC ids are expected to be unique across those workbooks; if one is not, this
-    /// returns null (with a warning) rather than picking whichever workbook was read first. A workbook that cannot be
-    /// read is skipped with a warning, so it does not make the Standard's other SPECs unverifiable.</summary>
-    BeadSpecRow? Find(string standardId, string specId);
+    /// workbook it came from. A family is expected to live in exactly one of those workbooks; if one spans two,
+    /// this returns empty (with a warning) rather than picking whichever workbook was read first. A workbook that
+    /// cannot be read is skipped with a warning, so it does not make the Standard's other SPECs unverifiable.</summary>
+    IReadOnlyList<BeadSpecRow> FindAll(string standardId, string specId);
 
     /// <summary>Every row of every bead SPEC workbook in every Standard in the sheet metal material standards file. An
     /// unstamped bead records no Standard and no SPEC, so identifying it means searching all of them. A workbook, or a
@@ -38,14 +44,14 @@ public sealed class BeadSpecLookup : IBeadSpecLookup
         _onWarning = onWarning;
     }
 
-    public BeadSpecRow? Find(string standardId, string specId)
+    public IReadOnlyList<BeadSpecRow> FindAll(string standardId, string specId)
     {
         try
         {
             var standard = _cache.ListStandards()
                 .FirstOrDefault(s => string.Equals(s.Id, standardId, StringComparison.OrdinalIgnoreCase));
             if (standard is null)
-                return null;
+                return Array.Empty<BeadSpecRow>();
 
             var matches = _cache.GetAllSpecs(standard)
                 .Where(row => string.Equals(row.SpecId, specId, StringComparison.OrdinalIgnoreCase))
@@ -53,8 +59,14 @@ public sealed class BeadSpecLookup : IBeadSpecLookup
 
             // Two workbooks claiming the same SPEC id is bad data, and either answer would be a guess. Reporting
             // "not found" is the same answer a retired SPEC gets, and callers already treat that as unverifiable.
-            // GetAllSpecs has already warned about it. A SPEC repeated within one workbook resolves to its first row.
-            return BeadSpecCache.WorkbooksOf(matches).Count > 1 ? null : matches.FirstOrDefault();
+            // GetAllSpecs has already warned about it. Repeats WITHIN one workbook are the expected case — that is
+            // the family, one row per thickness — so they all come back.
+            if (BeadSpecCache.WorkbooksOf(matches).Count > 1)
+                return Array.Empty<BeadSpecRow>();
+
+            // By thickness, so a caller can quote the family's coverage as a range without sorting it again.
+            matches.Sort((a, b) => a.Thickness.CompareTo(b.Thickness));
+            return matches;
         }
         catch (Exception ex) when (BeadSpecCache.IsSpecDataFailure(ex))
         {
@@ -62,7 +74,7 @@ public sealed class BeadSpecLookup : IBeadSpecLookup
             // Reporting "not found" is safe only because the provider turns that into a blocking constraint.
             _onWarning?.Invoke(
                 $"Could not read spec data while resolving Standard '{standardId}' SPEC '{specId}': {ex.Message}");
-            return null;
+            return Array.Empty<BeadSpecRow>();
         }
     }
 

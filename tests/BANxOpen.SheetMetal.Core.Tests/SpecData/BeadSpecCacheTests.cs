@@ -38,9 +38,11 @@ public class BeadSpecCacheTests
             if (Unreadable.Contains(workbookPath))
                 throw new InvalidDataException($"'{workbookPath}' is not a valid bead SPEC workbook.");
 
+            // Repeats of one SPEC id are the workbooks' real shape — the SPEC is driven once per sheet thickness —
+            // so each repeat gets its own thickness, descending, to prove nothing here depends on file order.
             return Enumerable.Range(0, RowsPerWorkbook)
-                .Select(_ => new BeadSpecRow(standard.Id, Path.GetFileNameWithoutExtension(workbookPath), "SPEC-1",
-                    0.245, 0.625, 0.625, 0.188, NextThickness,
+                .Select(i => new BeadSpecRow(standard.Id, Path.GetFileNameWithoutExtension(workbookPath), "SPEC-1",
+                    0.245, 0.625, 0.625, 0.188, NextThickness + (RowsPerWorkbook - 1 - i) * 0.01,
                     new Dictionary<string, bool> { ["2024-O"] = true }))
                 .ToList();
         }
@@ -220,12 +222,26 @@ public class BeadSpecCacheTests
         }
     });
 
+    /// <summary>A SPEC id repeated within one workbook is a family — the SPEC driven once per sheet thickness — not
+    /// an ambiguity, so every row comes back. Resolving it to the first row was the defect that made a bead judge a
+    /// 0.05 sheet by its 0.02 row and therefore allow nothing.</summary>
     [Fact]
-    public void Lookup_ResolvesASpecRepeatedWithinOneWorkbookToItsFirstRow() => WithCache((source, cache, _) =>
+    public void Lookup_ReturnsEveryRowOfASpecRepeatedWithinOneWorkbook() => WithCache((source, cache, _) =>
     {
-        source.RowsPerWorkbook = 2;
+        source.RowsPerWorkbook = 3;
 
-        Assert.NotNull(new BeadSpecLookup(cache).Find(Standard.Id, "SPEC-1"));
+        Assert.Equal(3, new BeadSpecLookup(cache).FindAll(Standard.Id, "SPEC-1").Count);
+    });
+
+    [Fact]
+    public void Lookup_OrdersAFamilyByThickness() => WithCache((source, cache, _) =>
+    {
+        source.RowsPerWorkbook = 3;
+
+        // The fake lists them thickest first, so file order cannot be what this passes on.
+        var family = new BeadSpecLookup(cache).FindAll(Standard.Id, "SPEC-1");
+
+        Assert.Equal(family.Select(r => r.Thickness).OrderBy(t => t), family.Select(r => r.Thickness));
     });
 
     [Fact]
@@ -236,7 +252,7 @@ public class BeadSpecCacheTests
         {
             source.OtherWorkbooks.Add(other);
 
-            Assert.Null(new BeadSpecLookup(cache).Find(Standard.Id, "SPEC-1"));
+            Assert.Empty(new BeadSpecLookup(cache).FindAll(Standard.Id, "SPEC-1"));
         }
         finally
         {
@@ -253,7 +269,7 @@ public class BeadSpecCacheTests
             source.OtherWorkbooks.Add(bad);
             source.Unreadable.Add(bad);
 
-            Assert.NotNull(new BeadSpecLookup(cache).Find(Standard.Id, "SPEC-1"));
+            Assert.NotEmpty(new BeadSpecLookup(cache).FindAll(Standard.Id, "SPEC-1"));
         }
         finally
         {

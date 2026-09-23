@@ -10,6 +10,12 @@ namespace BANxOpen.SheetMetal.Materials;
 /// material?", this asks "is this material allowed by the SPECs already on the body?". Both answer through
 /// <see cref="BeadSpecRow.IsAllowedFor"/>, so the two directions cannot disagree about what a SPEC permits.
 ///
+/// Deliberately thickness-blind. A SPEC allows a grade at some thicknesses and not others (it is one row per
+/// thickness), but the engine asks about a physical material, and which Material Table row the part lands on — so
+/// how thick the sheet becomes — is only settled afterwards by <see cref="SheetMetalRowChoiceProvider"/>. This
+/// therefore refuses only a grade no row of the SPEC allows at any thickness. The thickness-exact check belongs
+/// where a row with a thickness is actually in hand: <c>BeadOnBody.SpecAt</c>, used by the bead dialog.
+///
 /// Which SPECs apply to the body:
 /// <list type="bullet">
 /// <item>Every SPEC stamped on a bead the tool built.</item>
@@ -24,7 +30,7 @@ namespace BANxOpen.SheetMetal.Materials;
 /// <item>A material with no row in the sheet metal material standards file has no grade to check against any SPEC →
 /// <see cref="GradeUnrecognizedCode"/>. Emitted once, ahead of the per-SPEC constraints, so the user is told
 /// to fix the mapping rather than shown one refusal per SPEC.</item>
-/// <item>A recognised grade a SPEC does not allow → <see cref="NotAllowedCode"/>, naming the SPEC.</item>
+/// <item>A recognised grade no row of a SPEC allows → <see cref="NotAllowedCode"/>, naming the SPEC.</item>
 /// <item>A stamped SPEC no longer in its workbook → <see cref="SpecNotFoundCode"/>. Nothing can be verified
 /// against a SPEC that no longer exists.</item>
 /// </list>
@@ -85,13 +91,13 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
             if (bead.IsStamped)
             {
                 applicable.Add(new ApplicableSpec(
-                    bead.StandardId!, bead.SpecId!, bead.Spec, $"Bead SPEC {bead.SpecId} (Standard {bead.StandardId})"));
+                    bead.StandardId!, bead.SpecId!, bead.SpecFamily, $"Bead SPEC {bead.SpecId} (Standard {bead.StandardId})"));
             }
-            else if (bead.Spec is { } row)
+            else if (bead.IsSpecKnown)
             {
                 applicable.Add(new ApplicableSpec(
-                    row.StandardId, row.SpecId, row,
-                    $"bead feature '{bead.Name}' (unstamped; geometry matches SPEC {row.SpecId}, Standard {row.StandardId})"));
+                    bead.StandardId!, bead.SpecId!, bead.SpecFamily,
+                    $"bead feature '{bead.Name}' (unstamped; geometry matches SPEC {bead.SpecId}, Standard {bead.StandardId})"));
             }
             else
             {
@@ -154,7 +160,7 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
 
     private MaterialConstraint ConstraintFor(ApplicableSpec spec)
     {
-        if (spec.Row is null)
+        if (spec.Family.Count == 0)
         {
             return new MaterialConstraint(
                 DomainId,
@@ -166,20 +172,26 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
                      "with a current SPEC.");
         }
 
-        BeadSpecRow row = spec.Row;
+        // Asked of a PHYSICAL MATERIAL, which carries no thickness: which Material Table row the part ends up on —
+        // and therefore how thick the sheet becomes — is settled afterwards, by SheetMetalRowChoiceProvider. So the
+        // question this gate can honestly answer is "could this grade ever work with this SPEC", i.e. is it allowed
+        // by any thickness the SPEC is driven for. The thickness-exact answer is the bead dialog's (BeadOnBody.SpecAt).
+        IReadOnlyList<BeadSpecRow> family = spec.Family;
         return new MaterialConstraint(
             DomainId,
             spec.Label,
             NotAllowedCode,
             // An unmapped grade passes here on purpose: the grade-recognition constraint already blocks it, with
             // a message that says what is actually wrong.
-            candidate => _table.GradeForPhysicalMaterial(candidate.Name) is not { } grade || row.IsAllowedFor(grade),
+            candidate => _table.GradeForPhysicalMaterial(candidate.Name) is not { } grade
+                         || family.Any(row => row.IsAllowedFor(grade)),
             candidate =>
                 $"Material '{candidate.Name}' (grade '{_table.GradeForPhysicalMaterial(candidate.Name)}') is not allowed by " +
-                $"SPEC '{row.SpecId}'.");
+                $"SPEC '{spec.SpecId}' at any thickness it is driven for.");
     }
 
-    /// <summary>A SPEC that applies to the body, whether read off a stamp or matched from geometry. A null
-    /// <see cref="Row"/> means a stamped SPEC that could not be found.</summary>
-    private sealed record ApplicableSpec(string StandardId, string SpecId, BeadSpecRow? Row, string Label);
+    /// <summary>A SPEC that applies to the body, whether read off a stamp or matched from geometry. An empty
+    /// <see cref="Family"/> means a stamped SPEC that could not be found.</summary>
+    private sealed record ApplicableSpec(
+        string StandardId, string SpecId, IReadOnlyList<BeadSpecRow> Family, string Label);
 }
