@@ -1,6 +1,7 @@
 using System.Globalization;
 using NXOpen;
 using BANxOpen.Foundation.NxAdapters;
+using BANxOpen.Foundation.NxAdapters.Requirements;
 
 namespace BANxOpen.SheetMetal.NxAdapters.Common;
 
@@ -34,7 +35,10 @@ public sealed class ExpressionService
 
     /// <summary>A user expression, not a system one: NX expects a system expression to be associated with an object
     /// and deletes it with that object, so a renamed system expression shared by several beads can be deleted along
-    /// with one of them while the others still reference it.</summary>
+    /// with one of them while the others still reference it.
+    ///
+    /// Locked against hand edits (<see cref="Expression.IsNoEdit"/>): a SPEC value typed over in the Expressions dialog
+    /// would silently put every bead on the SPEC off-spec. Unlocked only for this tool's own edit.</summary>
     private Expression EnsureNamedExpression(string name, double value, Unit unit)
     {
         var expressions = _context.WorkPart.Expressions;
@@ -45,11 +49,17 @@ public sealed class ExpressionService
         var existing = expressions.Cast<Expression>().FirstOrDefault(e => e.Name == name);
         if (existing is not null)
         {
-            expressions.EditExpressionWithUnits(existing, unit, formula);
+            using (NxExpressionLock.Unlocked(existing))
+                expressions.EditExpressionWithUnits(existing, unit, formula);
+
+            // Also locks one created before locking was introduced.
+            NxExpressionLock.Lock(existing);
             return existing;
         }
 
-        return expressions.CreateNumberExpression($"{name}={formula}", unit);
+        var created = expressions.CreateNumberExpression($"{name}={formula}", unit);
+        NxExpressionLock.Lock(created);
+        return created;
     }
 
     private static string Sanitize(string value) => new(value.Where(char.IsLetterOrDigit).ToArray());

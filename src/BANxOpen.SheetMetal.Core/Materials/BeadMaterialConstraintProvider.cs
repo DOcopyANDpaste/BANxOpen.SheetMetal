@@ -1,6 +1,7 @@
 using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.Foundation.Core.Materials.Rules.Features;
 using BANxOpen.SheetMetal.Beads;
+using BANxOpen.SheetMetal.Requirements;
 using BANxOpen.SheetMetal.SpecData;
 
 namespace BANxOpen.SheetMetal.Materials;
@@ -35,7 +36,13 @@ namespace BANxOpen.SheetMetal.Materials;
 /// against a SPEC that no longer exists.</item>
 /// </list>
 ///
-/// A body with no beads produces no constraints and stays unrestricted.</summary>
+/// A body with no beads produces no constraints and stays unrestricted.
+///
+/// SPECs the part already holds a requirement for (<see cref="ISheetMetalRequirementReader"/>) are judged by
+/// <see cref="SheetMetalRequirementConstraintProvider"/> instead — thickness-exact, and the same thing NX checks — and
+/// are skipped here, except for a warning (<see cref="RequirementOutOfDateCode"/>) when the SPEC workbook no longer
+/// agrees with what the requirement recorded. This provider remains the path for beads built before requirements
+/// existed.</summary>
 public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintProvider
 {
     public const string ProviderDomainId = "SHEETMETAL.BEAD";
@@ -45,19 +52,25 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
     public const string SpecNotFoundCode = "BEAD_SPEC_NOT_FOUND";
     public const string UnstampedBeadUnmatchedCode = "BEAD_SPEC_UNMATCHED";
     public const string FeaturesUnreadableCode = "BEAD_FEATURES_UNREADABLE";
+    public const string RequirementOutOfDateCode = "REQUIREMENT_OUT_OF_DATE";
 
     private readonly IFeatureInventory _inventory;
     private readonly IBeadSpecLookup _specs;
     private readonly SheetMetalMaterialTable _table;
     private readonly BeadSettings _settings;
+    private readonly ISheetMetalRequirementReader? _requirements;
 
+    /// <param name="requirements">The part's sheet metal requirements. Null to judge every bead from the workbooks, as
+    /// before requirements existed.</param>
     public BeadMaterialConstraintProvider(
-        IFeatureInventory inventory, IBeadSpecLookup specs, SheetMetalMaterialTable table, BeadSettings settings)
+        IFeatureInventory inventory, IBeadSpecLookup specs, SheetMetalMaterialTable table, BeadSettings settings,
+        ISheetMetalRequirementReader? requirements = null)
     {
         _inventory = inventory;
         _specs = specs;
         _table = table;
         _settings = settings;
+        _requirements = requirements;
     }
 
     public string DomainId => ProviderDomainId;
@@ -114,6 +127,29 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
             .GroupBy(a => (a.StandardId, a.SpecId))
             .Select(g => g.First())
             .ToList();
+
+        // SPECs with a requirement in the part are the requirement provider's to judge. When the requirements could not
+        // all be read nothing is handed over: that provider blocks on the read error, and the workbook check below keeps
+        // every bead guarded even if it is not registered.
+        if (_requirements is not null)
+        {
+            var (requirements, errors) = _requirements.ReadAll();
+            var covered = requirements
+                .Where(r => r.Domain == ProviderDomainId)
+                .ToDictionary(r => (r.StandardId, r.SpecId), r => r);
+
+            foreach (var spec in distinct.Where(s => covered.ContainsKey((s.StandardId, s.SpecId))))
+            {
+                if (DriftMessage(covered[(spec.StandardId, spec.SpecId)], spec.Family) is { } drift)
+                {
+                    constraints.Add(new MaterialConstraint(
+                        DomainId, spec.Label, RequirementOutOfDateCode, _ => false, _ => drift, ConstraintSeverity.Warn));
+                }
+            }
+
+            if (errors.Count == 0)
+                distinct = distinct.Where(s => !covered.ContainsKey((s.StandardId, s.SpecId))).ToList();
+        }
 
         if (distinct.Count > 0)
         {
@@ -188,6 +224,29 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
             candidate =>
                 $"Material '{candidate.Name}' (grade '{_table.GradeForPhysicalMaterial(candidate.Name)}') is not allowed by " +
                 $"SPEC '{spec.SpecId}' at any thickness it is driven for.");
+    }
+
+    /// <summary>Why the requirement the part holds for a SPEC no longer matches its workbook, or null when it does. The
+    /// requirement still governs — it is what the beads were built to — but re-applying them would change it.</summary>
+    private static string? DriftMessage(SheetMetalRequirement requirement, IReadOnlyList<BeadSpecRow> family)
+    {
+        var allowance = requirement.Allowance;
+        var row = family.FirstOrDefault(r => allowance.MatchesThickness(r.Thickness));
+        if (row is null)
+        {
+            return family.Count == 0
+                ? null // SpecNotFoundCode is not raised for covered SPECs, so the stamp's own path is not needed here.
+                : $"{requirement.Label}: its workbook no longer has a row at {allowance.ThicknessText} in, the thickness its " +
+                  "beads were built at. The part's requirement still applies; re-apply the beads with the Bead tool to bring them up to date.";
+        }
+
+        var workbookGrades = BeadRequirementFactory.AllowanceOf(row).Grades;
+        var same = new HashSet<string>(workbookGrades, StringComparer.OrdinalIgnoreCase).SetEquals(allowance.Grades);
+        return same
+            ? null
+            : $"{requirement.Label}: its workbook now allows {string.Join(", ", workbookGrades)} at {allowance.ThicknessText} in, " +
+              $"but the part's requirement records {allowance.GradesText}. The requirement still applies; re-apply the beads " +
+              "with the Bead tool to bring it up to date.";
     }
 
     /// <summary>A SPEC that applies to the body, whether read off a stamp or matched from geometry. An empty

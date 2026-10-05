@@ -1,10 +1,13 @@
 using BANxOpen.Foundation.NxAdapters;
 using BANxOpen.Foundation.NxAdapters.Materials;
+using BANxOpen.Foundation.NxAdapters.Requirements;
 using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.Common;
 using BANxOpen.SheetMetal.Materials;
 using BANxOpen.SheetMetal.NxAdapters.Beads;
 using BANxOpen.SheetMetal.NxAdapters.Materials;
+using BANxOpen.SheetMetal.NxAdapters.Requirements;
+using BANxOpen.SheetMetal.Requirements;
 using BANxOpen.SheetMetal.SpecData;
 
 namespace BANxOpen.SheetMetal.NxAdapters.Common;
@@ -27,9 +30,11 @@ public sealed class SheetMetalServices
         IFeatureInventory featureInventory,
         SheetMetalPreferenceService preferenceService,
         SheetMetalStandardSelection standardSelection,
+        SheetMetalRequirementService requirementService,
         IReadOnlyList<INxMaterialRuleModule> materialModules)
     {
         StandardSelection = standardSelection;
+        RequirementService = requirementService;
         MaterialTable = materialTable;
         SpecCache = specCache;
         SpecLookup = specLookup;
@@ -62,9 +67,14 @@ public sealed class SheetMetalServices
     /// Left unset, every Standard's rows are offered.</summary>
     public SheetMetalStandardSelection StandardSelection { get; }
 
+    /// <summary>Reads and writes the sheet metal requirements held in the part — native NX Requirements NX checks on
+    /// every change, one per bead SPEC. The bead dialog refreshes them on Apply.</summary>
+    public SheetMetalRequirementService RequirementService { get; }
+
     /// <summary>The material rule modules this domain contributes — pass them to <c>MaterialEngine.Create</c>:
-    /// bead SPEC restrictions (<see cref="BeadFeatureRuleModule"/>) and Sheet Metal Preferences
-    /// (<see cref="SheetMetalPreferenceRuleModule"/>).</summary>
+    /// bead SPEC restrictions (<see cref="BeadFeatureRuleModule"/>), Sheet Metal Preferences
+    /// (<see cref="SheetMetalPreferenceRuleModule"/>) and the part's requirements
+    /// (<see cref="SheetMetalRequirementRuleModule"/>).</summary>
     public IReadOnlyList<INxMaterialRuleModule> MaterialModules { get; }
 
     /// <summary>Loads the config and builds the services.</summary>
@@ -85,19 +95,32 @@ public sealed class SheetMetalServices
             var preferenceService = new SheetMetalPreferenceService(context, materialTable);
             var standardSelection = new SheetMetalStandardSelection(materialTable);
 
+            // One reader for every sheet metal feature domain; a louver or joggle domain adds its (domain, noun) here.
+            var requirementStore = new NxPartRequirementStore(context);
+            var requirementReader = new SheetMetalRequirementReader(
+                requirementStore,
+                new[] { (BeadMaterialConstraintProvider.ProviderDomainId, BeadRequirementFactory.FeatureNoun) });
+            var requirementService = new SheetMetalRequirementService(
+                context, inventory, specLookup, beadSettings, preferenceService, requirementStore, requirementReader);
+
             var materialModules = new INxMaterialRuleModule[]
             {
-                new BeadFeatureRuleModule(new BeadMaterialConstraintProvider(inventory, specLookup, materialTable, beadSettings)),
+                new BeadFeatureRuleModule(new BeadMaterialConstraintProvider(
+                    inventory, specLookup, materialTable, beadSettings, requirementReader)),
                 new SheetMetalPreferenceRuleModule(
                     new SheetMetalPreferenceConstraintProvider(preferenceService, materialTable),
-                    new SheetMetalRowChoiceProvider(preferenceService, standardSelection),
+                    new SheetMetalRowChoiceProvider(preferenceService, standardSelection, requirementReader),
                     new SyncSheetMetalPreferenceEffectRule(materialTable),
                     new SheetMetalPreferenceSyncExecutor(preferenceService, materialTable)),
+                new SheetMetalRequirementRuleModule(
+                    new SheetMetalRequirementConstraintProvider(requirementReader, preferenceService, standardSelection),
+                    new RefreshRequirementsEffectRule(),
+                    new RefreshRequirementsExecutor(context, preferenceService, requirementService)),
             };
 
             return BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices>.Success(new SheetMetalServices(
                 materialTable, specCache, specLookup, beadSettings,
-                tracebackService, inventory, preferenceService, standardSelection, materialModules));
+                tracebackService, inventory, preferenceService, standardSelection, requirementService, materialModules));
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException or InvalidDataException
                                        or IOException or UnauthorizedAccessException)

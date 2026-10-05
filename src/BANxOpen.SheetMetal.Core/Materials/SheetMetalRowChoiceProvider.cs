@@ -3,6 +3,7 @@ using BANxOpen.Foundation.Contracts.Bodies;
 using BANxOpen.Foundation.Core.Materials.Assignment;
 using BANxOpen.Foundation.Core.Materials.Assignment.Choices;
 using BANxOpen.SheetMetal.Common;
+using BANxOpen.SheetMetal.Requirements;
 
 namespace BANxOpen.SheetMetal.Materials;
 
@@ -36,7 +37,12 @@ namespace BANxOpen.SheetMetal.Materials;
 /// <see cref="AssignmentChoiceOption.IsPreferred"/> so the UI can show those first, and the rest carry a
 /// confirmation prompt rather than being hidden: a thickness that disagrees with the body is usually a mistake,
 /// but it is the user's to make — <see cref="SheetMetalPreferenceCheck"/> reports the mismatch afterwards either
-/// way.</summary>
+/// way.
+///
+/// A row the part's sheet metal requirements refuse (<see cref="ISheetMetalRequirementReader"/>) — a thickness other
+/// than the one its SPEC features were built at, or a grade they do not allow there — is listed but blocked
+/// (<see cref="AssignmentChoiceOption.BlockReason"/>), and never chosen automatically. Blocking supersedes the
+/// thickness confirmation for such a row: the user cannot talk past a requirement.</summary>
 public sealed class SheetMetalRowChoiceProvider : IAssignmentChoiceProvider
 {
     public const string ChoiceIdentifier = "SHEETMETAL.PREFERENCE_ROW";
@@ -55,11 +61,16 @@ public sealed class SheetMetalRowChoiceProvider : IAssignmentChoiceProvider
 
     private readonly ISheetMetalPreferenceReader _reader;
     private readonly SheetMetalStandardSelection _selection;
+    private readonly ISheetMetalRequirementReader? _requirements;
 
-    public SheetMetalRowChoiceProvider(ISheetMetalPreferenceReader reader, SheetMetalStandardSelection selection)
+    /// <param name="requirements">The part's sheet metal requirements, which block the rows they refuse. Null for no
+    /// requirement checking.</param>
+    public SheetMetalRowChoiceProvider(
+        ISheetMetalPreferenceReader reader, SheetMetalStandardSelection selection, ISheetMetalRequirementReader? requirements = null)
     {
         _reader = reader;
         _selection = selection;
+        _requirements = requirements;
     }
 
     public string ChoiceId => ChoiceIdentifier;
@@ -89,16 +100,19 @@ public sealed class SheetMetalRowChoiceProvider : IAssignmentChoiceProvider
         }
 
         var bodyThickness = read.BodyThickness;
-        var options = rows.Select(row => ToOption(row, bodyThickness)).ToList();
+        var blockReasons = BlockReasons(rows);
+        var options = rows.Select(row => ToOption(row, bodyThickness, blockReasons[row.Name])).ToList();
         bool MatchesBody(SheetMetalMaterialRow row) =>
             bodyThickness is not { } measured || SheetMetalPreferenceCheck.ThicknessMatches(measured, row.Thickness);
+        bool IsBlocked(SheetMetalMaterialRow row) => blockReasons[row.Name] is not null;
 
         // The preferences are already set to a row of this material, in this Standard, at this body's thickness —
         // nothing to decide.
         if (preference.Row is { } current
             && string.Equals(current.PhysicalMaterialName, materialName, StringComparison.OrdinalIgnoreCase)
             && options.Any(o => string.Equals(o.OptionId, current.Name, StringComparison.Ordinal))
-            && MatchesBody(current))
+            && MatchesBody(current)
+            && !IsBlocked(current))
         {
             return Build(context, options, current.Name, new AssignmentChoiceAutoSelection(
                 current.Name,
@@ -108,7 +122,7 @@ public sealed class SheetMetalRowChoiceProvider : IAssignmentChoiceProvider
 
         // One row that fits needs no question. One that disagrees with the body's thickness is still put to the
         // user, so the option's thickness confirmation is seen rather than skipped.
-        if (rows.Count == 1 && MatchesBody(rows[0]))
+        if (rows.Count == 1 && MatchesBody(rows[0]) && !IsBlocked(rows[0]))
         {
             return Build(context, options, rows[0].Name, new AssignmentChoiceAutoSelection(
                 rows[0].Name,
@@ -154,15 +168,47 @@ public sealed class SheetMetalRowChoiceProvider : IAssignmentChoiceProvider
             options.Any(o => !o.IsPreferred) ? "Only rows matching this body's thickness" : null,
             auto);
 
-    private static AssignmentChoiceOption ToOption(SheetMetalMaterialRow row, double? bodyThickness)
+    /// <summary>Why each row is refused by the part's requirements, by row name; null for a row they allow. Requirements
+    /// that cannot be read refuse every row — the constraint provider blocks the assignment for the same reason.</summary>
+    private Dictionary<string, string?> BlockReasons(IReadOnlyList<SheetMetalMaterialRow> rows)
+    {
+        var reasons = rows.ToDictionary(r => r.Name, _ => (string?)null, StringComparer.Ordinal);
+        if (_requirements is null)
+            return reasons;
+
+        var (requirements, errors) = _requirements.ReadAll();
+        foreach (var row in rows)
+        {
+            reasons[row.Name] = errors.Count > 0
+                ? "This part's sheet metal requirements could not be read, so no row can be checked against them."
+                : requirements.FirstOrDefault(r => !r.Allowance.IsSatisfiedBy(row.Thickness, row.Grade)) is { } refusing
+                    ? BlockReasonFor(refusing, row)
+                    : null;
+        }
+
+        return reasons;
+    }
+
+    private static string BlockReasonFor(SheetMetalRequirement requirement, SheetMetalMaterialRow row)
+    {
+        var allowance = requirement.Allowance;
+        return allowance.MatchesThickness(row.Thickness)
+            ? $"{requirement.Label} does not allow grade '{row.Grade}' at {allowance.ThicknessText} in " +
+              $"(allowed: {allowance.GradesText})."
+            : $"{requirement.Label}'s features were built at {allowance.ThicknessText} in. Re-apply them with their tool " +
+              $"at {Format(row.Thickness)} in before setting the sheet to this row.";
+    }
+
+    private static AssignmentChoiceOption ToOption(SheetMetalMaterialRow row, double? bodyThickness, string? blockReason)
     {
         var matchesThickness = bodyThickness is { } measured
                                && SheetMetalPreferenceCheck.ThicknessMatches(measured, row.Thickness);
 
         // Only worth confirming when there is a body thickness to disagree with. A thickness NX would not report
-        // marks no row as preferred, and prompting on every row in that case would be noise.
+        // marks no row as preferred, and prompting on every row in that case would be noise. A blocked row is never
+        // confirmed: there is nothing the user could say yes to.
         string? confirmation = null;
-        if (!matchesThickness && bodyThickness is { } bodyValue)
+        if (!matchesThickness && bodyThickness is { } bodyValue && blockReason is null)
         {
             confirmation =
                 $"'{row.Name}' is {Format(row.Thickness)} thick, but this body is {Format(bodyValue)} thick." +
@@ -176,8 +222,9 @@ public sealed class SheetMetalRowChoiceProvider : IAssignmentChoiceProvider
         return new AssignmentChoiceOption(
             row.Name,
             new[] { row.Standard, row.Grade, Format(row.Thickness), row.BendRadius },
-            matchesThickness,
-            confirmation);
+            matchesThickness && blockReason is null,
+            confirmation,
+            blockReason);
     }
 
     private static string DescribeRow(SheetMetalMaterialRow row) =>
@@ -185,5 +232,5 @@ public sealed class SheetMetalRowChoiceProvider : IAssignmentChoiceProvider
 
     /// <summary>Four decimals, matching how <see cref="SheetMetalPreferenceCheck"/> writes a thickness into its
     /// own messages, so the same number does not appear two ways in one session.</summary>
-    private static string Format(double thickness) => thickness.ToString("0.####", CultureInfo.CurrentCulture);
+    private static string Format(double thickness) => SheetMetalRowFilter.FormatThickness(thickness);
 }
