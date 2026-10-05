@@ -95,16 +95,12 @@ public class SheetMetalPreferenceConstraintProviderTests
     }
 
     [Fact]
-    public void Assignable_material_query_offers_every_material_with_a_row()
+    public void Every_material_with_a_row_is_allowed()
     {
-        var query = new AssignableMaterialQuery(
-            new MaterialAssignmentPlanner(new[] { new FeatureConstraintGateRule(Provider()) }));
+        var allowed = new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6", "Titanium Grade 5" }
+            .Where(name => Gate(Provider(), name).Decision != RuleDecision.Block);
 
-        var offered = query.ListAssignable(
-            Body, null,
-            new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6", "Titanium Grade 5" }.Select(MakeMaterial));
-
-        Assert.Equal(new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6" }, offered.Select(m => m.Name));
+        Assert.Equal(new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6" }, allowed);
     }
 
     private sealed class FixedReader : ISheetMetalPreferenceReader

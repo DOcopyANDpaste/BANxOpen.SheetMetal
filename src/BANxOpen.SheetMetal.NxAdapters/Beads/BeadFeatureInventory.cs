@@ -20,10 +20,7 @@ namespace BANxOpen.SheetMetal.NxAdapters.Beads;
 ///
 /// A body is matched by <see cref="BodyResolver.GetBodyId"/>, the same identity the material engine uses.
 ///
-/// Every feature in the part is scanned per call. That is fine for one body; a caller planning many candidate
-/// materials against the same body should wrap the provider built on this in
-/// <c>CachingFeatureConstraintProvider</c>, so the scan happens once per query rather than once per
-/// candidate.</summary>
+/// Every feature in the part is scanned per call.</summary>
 public sealed class BeadFeatureInventory : IFeatureInventory
 {
     private readonly NxSessionContext _context;

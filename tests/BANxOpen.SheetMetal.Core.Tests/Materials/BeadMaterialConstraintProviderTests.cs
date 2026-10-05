@@ -335,24 +335,20 @@ public class BeadMaterialConstraintProviderTests
         Assert.Contains("NX 12345", outcome.Message);
     }
 
-    // ---- end to end through the engine ----
+    // ---- end to end ----
 
     [Fact]
-    public void Assignable_material_query_offers_only_materials_every_SPEC_permits()
+    public void Only_materials_every_SPEC_permits_are_allowed()
     {
         var provider = Provider(
             new[] { Stamp("B1005010-1"), Stamp("B1005010-2") },
             Spec("B1005010-1", "2024-O", "5052-O"),
             Spec("B1005010-2", "2024-O", "7075-T6"));
 
-        var query = new AssignableMaterialQuery(
-            new MaterialAssignmentPlanner(new[] { new FeatureConstraintGateRule(provider) }));
+        var allowed = new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6", "Titanium Grade 5" }
+            .Where(name => Gate(provider, name).Decision != RuleDecision.Block);
 
-        var offered = query.ListAssignable(
-            Body, null,
-            new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6", "Titanium Grade 5" }.Select(MakeMaterial));
-
-        Assert.Equal(new[] { "Aluminum 2024-O" }, offered.Select(m => m.Name));
+        Assert.Equal(new[] { "Aluminum 2024-O" }, allowed);
     }
 
     [Theory]
