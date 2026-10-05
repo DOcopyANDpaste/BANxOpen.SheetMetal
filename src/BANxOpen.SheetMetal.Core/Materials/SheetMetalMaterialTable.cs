@@ -62,7 +62,7 @@ public sealed class SheetMetalMaterialTable
     ///
     /// Usually more than one: the same physical material appears at several thicknesses, in several grades, and
     /// across Standards. Which of them a part should use is not something the table settles, so
-    /// <c>SheetMetalRowChoiceProvider</c> puts the list to the user.</summary>
+    /// the user picks one (<c>SheetMetalRowGateRule</c> checks it).</summary>
     public IReadOnlyList<SheetMetalMaterialRow> RowsForPhysicalMaterial(string physicalMaterialName) =>
         Rows.Where(r => string.Equals(r.PhysicalMaterialName, physicalMaterialName, StringComparison.OrdinalIgnoreCase)).ToList();
 

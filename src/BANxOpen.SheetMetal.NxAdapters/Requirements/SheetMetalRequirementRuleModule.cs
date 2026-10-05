@@ -1,5 +1,4 @@
 using BANxOpen.Foundation.Core.Materials.Assignment;
-using BANxOpen.Foundation.Core.Materials.Assignment.Choices;
 using BANxOpen.Foundation.Core.Materials.Rules.Features;
 using BANxOpen.Foundation.NxAdapters.Materials;
 using BANxOpen.SheetMetal.Requirements;
@@ -9,7 +8,7 @@ namespace BANxOpen.SheetMetal.NxAdapters.Requirements;
 /// <summary>Sheet metal requirements in the material engine: refuses a material the part's requirements do not allow
 /// (<see cref="SheetMetalRequirementConstraintProvider"/>), and refreshes the requirements once an assignment goes ahead
 /// (<see cref="RefreshRequirementsEffectRule"/>, carried out by <see cref="RefreshRequirementsExecutor"/>). The row-level
-/// check lives in <c>SheetMetalRowChoiceProvider</c>, which is registered with the preferences.</summary>
+/// check lives in <c>SheetMetalRowGateRule</c>, which is registered with the preferences.</summary>
 public sealed class SheetMetalRequirementRuleModule : INxMaterialRuleModule
 {
     public SheetMetalRequirementRuleModule(
@@ -27,8 +26,6 @@ public sealed class SheetMetalRequirementRuleModule : INxMaterialRuleModule
     public IReadOnlyList<IMaterialValidationRule> ValidationRules => Array.Empty<IMaterialValidationRule>();
 
     public IReadOnlyList<IFeatureMaterialConstraintProvider> FeatureConstraints { get; }
-
-    public IReadOnlyList<IAssignmentChoiceProvider> ChoiceProviders => Array.Empty<IAssignmentChoiceProvider>();
 
     public IReadOnlyList<IPostAssignmentEffectRule> SideEffectRules { get; }
 

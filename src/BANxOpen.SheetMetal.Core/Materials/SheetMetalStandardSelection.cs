@@ -1,7 +1,7 @@
 namespace BANxOpen.SheetMetal.Materials;
 
 /// <summary>The Standard a dialog has chosen for the Sheet Metal Preferences, shared between that dialog and
-/// <see cref="SheetMetalRowChoiceProvider"/>. The dialog sets <see cref="Selected"/>; the provider only offers rows
+/// <see cref="SheetMetalRowGateRule"/>. The dialog sets <see cref="Selected"/>; the rule only accepts rows
 /// of that Standard.
 ///
 /// A mutable holder rather than a value on the rule context because the Standard is a sheet metal concept the shared

@@ -109,7 +109,7 @@ public sealed class SheetMetalServices
                     inventory, specLookup, materialTable, beadSettings, requirementReader)),
                 new SheetMetalPreferenceRuleModule(
                     new SheetMetalPreferenceConstraintProvider(preferenceService, materialTable),
-                    new SheetMetalRowChoiceProvider(preferenceService, standardSelection, requirementReader),
+                    new SheetMetalRowGateRule(preferenceService, standardSelection, requirementReader),
                     new SyncSheetMetalPreferenceEffectRule(materialTable),
                     new SheetMetalPreferenceSyncExecutor(preferenceService, materialTable)),
                 new SheetMetalRequirementRuleModule(

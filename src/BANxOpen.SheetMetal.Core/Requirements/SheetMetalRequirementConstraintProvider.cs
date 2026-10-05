@@ -9,8 +9,8 @@ namespace BANxOpen.SheetMetal.Requirements;
 /// NX cannot disagree.
 ///
 /// Asked of a physical material, which is several standards-file rows (one per thickness and grade). A material is
-/// acceptable when at least one of its rows — under the chosen Standard — satisfies every requirement: the row choice
-/// (<see cref="SheetMetalRowChoiceProvider"/>) then blocks the individual rows that do not, so the user can only land on
+/// acceptable when at least one of its rows — under the chosen Standard — satisfies every requirement: the row gate
+/// (<see cref="SheetMetalRowGateRule"/>) then blocks the individual rows that do not, so the user can only land on
 /// a compliant one. A material with no row at all is left to <see cref="SheetMetalPreferenceConstraintProvider"/>,
 /// which refuses it with the clearer reason.
 ///

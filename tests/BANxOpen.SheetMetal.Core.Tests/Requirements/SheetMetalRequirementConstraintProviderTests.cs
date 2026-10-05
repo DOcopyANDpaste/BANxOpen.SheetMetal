@@ -2,7 +2,6 @@ using BANxOpen.Foundation.Contracts.Bodies;
 using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.Foundation.Contracts.Materials;
 using BANxOpen.Foundation.Core.Materials.Assignment;
-using BANxOpen.Foundation.Core.Materials.Assignment.Choices;
 using BANxOpen.Foundation.Core.Materials.Rules.Features;
 using BANxOpen.Foundation.Core.RuleEngine;
 using BANxOpen.SheetMetal.Materials;
@@ -71,51 +70,46 @@ public class SheetMetalRequirementConstraintProviderTests
         Assert.Equal(RuleDecision.Allow, outcome.Decision);
     }
 
-    // ---- the row choice ----
+    // ---- the picked row ----
 
-    private static AssignmentChoice? Choose(ISheetMetalRequirementReader requirements, string material, string? preferenceRow = null)
+    private static RuleOutcome Pick(ISheetMetalRequirementReader requirements, string material, string row) =>
+        new SheetMetalRowGateRule(
+                new FixedPreferenceReader(SheetMetalBody(Table)), new SheetMetalStandardSelection(Table) { Selected = Standard }, requirements)
+            .Evaluate(new MaterialAssignmentRuleContext(MakeMaterial(material), Body, null, new[] { Body }) { RequestedVariant = row });
+
+    [Fact]
+    public void A_row_at_another_thickness_than_the_features_were_built_at_is_blocked()
     {
-        var provider = new SheetMetalRowChoiceProvider(
-            new FixedPreferenceReader(SheetMetalBody(Table, preferenceRow)), new SheetMetalStandardSelection(Table) { Selected = Standard }, requirements);
-        return provider.ChoiceFor(new MaterialAssignmentRuleContext(MakeMaterial(material), Body, null, new[] { Body }));
+        var requirements = new FakeRequirementReader(Requirement("B1", 0.02, "2024-O"));
+
+        Assert.Equal(RuleDecision.Allow, Pick(requirements, "Aluminum 2024-O", "2024-O_0.020").Decision);
+
+        var blocked = Pick(requirements, "Aluminum 2024-O", "2024-O_0.032");
+        Assert.Equal(RuleDecision.Block, blocked.Decision);
+        Assert.Equal(SheetMetalRowGateRule.RefusedCode, blocked.ReasonCode);
+        Assert.Contains("built at 0.02", blocked.Message);
     }
 
     [Fact]
-    public void A_row_at_another_thickness_is_listed_but_blocked()
+    public void A_row_whose_grade_the_requirement_does_not_allow_is_blocked()
     {
-        var choice = Choose(new FakeRequirementReader(Requirement("B1", 0.02, "2024-O")), "Aluminum 2024-O");
+        var outcome = Pick(new FakeRequirementReader(Requirement("B1", 0.02, "2024-O")), "Aluminum 5052-O", "5052-O_0.020");
 
-        Assert.NotNull(choice);
-        Assert.False(choice!.Find("2024-O_0.020")!.IsBlocked);
-        var blocked = choice.Find("2024-O_0.032")!;
-        Assert.True(blocked.IsBlocked);
-        Assert.Contains("built at 0.02", blocked.BlockReason);
-        Assert.Null(blocked.ConfirmationPrompt);
+        Assert.Equal(RuleDecision.Block, outcome.Decision);
+        Assert.Contains("does not allow grade '5052-O'", outcome.Message);
     }
 
     [Fact]
-    public void A_blocked_row_is_never_chosen_automatically()
+    public void Unreadable_requirements_block_every_row()
     {
-        // 5052-O has one row, matching the body — normally taken without asking. Here the requirement refuses it.
-        var choice = Choose(new FakeRequirementReader(Requirement("B1", 0.02, "2024-O")), "Aluminum 5052-O");
+        var outcome = Pick(new FakeRequirementReader(Array.Empty<SheetMetalRequirement>(), "NX 1: broken"), "Aluminum 2024-O", "2024-O_0.020");
 
-        Assert.Null(choice!.Auto);
-        Assert.True(Assert.Single(choice.Options).IsBlocked);
+        Assert.Equal(SheetMetalRowGateRule.RefusedCode, outcome.ReasonCode);
     }
 
     [Fact]
-    public void The_preferences_row_is_not_kept_when_a_requirement_refuses_it()
+    public void Without_requirements_no_row_is_blocked()
     {
-        var choice = Choose(new FakeRequirementReader(Requirement("B1", 0.02, "5052-O")), "Aluminum 2024-O", preferenceRow: "2024-O_0.020");
-
-        Assert.Null(choice!.Auto);
-    }
-
-    [Fact]
-    public void Without_requirements_nothing_is_blocked()
-    {
-        var choice = Choose(new FakeRequirementReader(), "Aluminum 2024-O");
-
-        Assert.All(choice!.Options, o => Assert.False(o.IsBlocked));
+        Assert.Equal(RuleDecision.Allow, Pick(new FakeRequirementReader(), "Aluminum 2024-O", "2024-O_0.020").Decision);
     }
 }

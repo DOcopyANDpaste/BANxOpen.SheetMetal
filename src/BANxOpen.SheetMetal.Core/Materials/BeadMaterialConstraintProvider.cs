@@ -13,7 +13,7 @@ namespace BANxOpen.SheetMetal.Materials;
 ///
 /// Deliberately thickness-blind. A SPEC allows a grade at some thicknesses and not others (it is one row per
 /// thickness), but the engine asks about a physical material, and which Material Table row the part lands on — so
-/// how thick the sheet becomes — is only settled afterwards by <see cref="SheetMetalRowChoiceProvider"/>. This
+/// how thick the sheet becomes — is only settled by the row the user picks (<see cref="SheetMetalRowGateRule"/>). This
 /// therefore refuses only a grade no row of the SPEC allows at any thickness. The thickness-exact check belongs
 /// where a row with a thickness is actually in hand: <c>BeadOnBody.SpecAt</c>, used by the bead dialog.
 ///
@@ -209,7 +209,7 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
         }
 
         // Asked of a PHYSICAL MATERIAL, which carries no thickness: which Material Table row the part ends up on —
-        // and therefore how thick the sheet becomes — is settled afterwards, by SheetMetalRowChoiceProvider. So the
+        // and therefore how thick the sheet becomes — is settled by the picked row, in SheetMetalRowGateRule. So the
         // question this gate can honestly answer is "could this grade ever work with this SPEC", i.e. is it allowed
         // by any thickness the SPEC is driven for. The thickness-exact answer is the bead dialog's (BeadOnBody.SpecAt).
         IReadOnlyList<BeadSpecRow> family = spec.Family;

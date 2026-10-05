@@ -15,7 +15,7 @@ namespace BANxOpen.SheetMetal.Materials;
 ///
 /// Distinct from <see cref="SheetMetalPartPreference.Thickness"/>, which is what the preferences <em>say</em> the
 /// material is: the two disagreeing is exactly the mismatch <see cref="SheetMetalPreferenceCheck"/> reports. The
-/// body's own value travels with the read because <c>SheetMetalRowChoiceProvider</c> marks the rows that match
+/// body's own value travels with the read because <c>SheetMetalRowGateRule</c> compares the picked row against
 /// it, and asking NX for it a second time from another layer could get a different answer.</param>
 public sealed record SheetMetalPreferenceRead(
     bool IsSheetMetalBody,

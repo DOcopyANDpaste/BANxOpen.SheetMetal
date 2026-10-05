@@ -9,16 +9,10 @@ namespace BANxOpen.SheetMetal.Materials;
 /// Sheet Metal Preferences material. The NX executor registers under <see cref="InstructionType"/> and reads
 /// <see cref="MaterialNameDataKey"/>; both are constants here so the two cannot drift apart.
 ///
-/// The row is the one the user picked, read back out of <see cref="MaterialAssignmentRuleContext.ChoiceAnswers"/>
-/// under <see cref="SheetMetalRowChoiceProvider.ChoiceIdentifier"/> — that provider and this rule are two halves of
-/// one thing and are registered together in <c>SheetMetalPreferenceRuleModule</c>. A material made in exactly one
-/// row, or one the part's preferences are already set to, is answered by the provider itself without troubling the
-/// user, so this rule sees an answer either way.
-///
-/// Emits nothing when there is no answer, rather than falling back to a row of its own choosing. Taking the first
-/// row in file order was the phase 1 stand-in for asking, and re-introducing it as a fallback would mean a caller
-/// that forgot to collect the choice silently got phase 1 behaviour back. The finalizer skips such a body instead
-/// and the caller reports it.</summary>
+/// The row is the one the user picked, carried on <see cref="MaterialAssignmentRuleContext.RequestedVariant"/> and
+/// already checked by <see cref="SheetMetalRowGateRule"/>; the two are registered together in
+/// <c>SheetMetalPreferenceRuleModule</c>. Emits nothing when no row was picked, rather than falling back to a row of
+/// its own choosing: a dialog that requires a row for sheet metal bodies refuses that case before it gets here.</summary>
 public sealed class SyncSheetMetalPreferenceEffectRule : IPostAssignmentEffectRule
 {
     public const string InstructionType = "SYNC_SHEETMETAL_PREFERENCE_MATERIAL";
@@ -44,16 +38,11 @@ public sealed class SyncSheetMetalPreferenceEffectRule : IPostAssignmentEffectRu
         if (context.TargetBody.Kind != BodyKind.SheetMetal)
             return Array.Empty<SideEffectInstruction>();
 
-        if (!context.ChoiceAnswers.TryGet(
-                SheetMetalRowChoiceProvider.ChoiceIdentifier, context.TargetBody.Id, out var rowName))
-        {
+        if (context.RequestedVariant is not { } rowName)
             return Array.Empty<SideEffectInstruction>();
-        }
 
-        // The answer is an option id the provider built from this same table, so a miss means the answer came
-        // from somewhere else — a caller that pre-answered with a row name of its own. The row question is shared
-        // by the whole part, so an answer given for a body assigned a different material names a row of that
-        // material; setting it here would put the preferences on the wrong material.
+        // The gate rule refuses a row that is not one of this material's, so this only guards a caller that skipped
+        // planning: setting a row of another material would put the preferences on the wrong material.
         if (_table.Find(rowName) is not { } row
             || !string.Equals(row.PhysicalMaterialName, context.RequestedMaterial.Name, StringComparison.OrdinalIgnoreCase))
         {
