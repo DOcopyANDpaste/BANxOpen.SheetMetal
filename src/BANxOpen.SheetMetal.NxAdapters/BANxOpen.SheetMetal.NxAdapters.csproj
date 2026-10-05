@@ -20,14 +20,17 @@
   <ItemGroup>
     <ProjectReference Include="..\BANxOpen.SheetMetal.Core\BANxOpen.SheetMetal.Core.csproj" />
     <!--
-      Foundation Contracts/Core arrive transitively via SheetMetal.Core, but are listed explicitly since
-      this project uses their types directly. NxAdapters (NxSessionContext, UndoScope, NxListingLog,
-      NxMessageBoxHelper, and the material PartMaterialService) has no other path in and must be listed.
+      Foundation and Materials Contracts/Core arrive transitively via SheetMetal.Core, but are listed explicitly
+      since this project uses their types directly. The two NxAdapters have no other path in and must be listed:
+      Foundation's (NxSessionContext, UndoScope, BodyResolver) and Materials' (MaterialEngine, PartMaterialService,
+      the side-effect executor seam).
     -->
     <ProjectReference Include="..\..\..\BANxOpen.Foundation\src\BANxOpen.Foundation.Contracts\BANxOpen.Foundation.Contracts.csproj" />
     <ProjectReference Include="..\..\..\BANxOpen.Foundation\src\BANxOpen.Foundation.Core\BANxOpen.Foundation.Core.csproj" />
-    <ProjectReference Include="..\..\..\BANxOpen.Foundation\src\BANxOpen.Foundation.Core.Materials\BANxOpen.Foundation.Core.Materials.csproj" />
     <ProjectReference Include="..\..\..\BANxOpen.Foundation\src\BANxOpen.Foundation.NxAdapters\BANxOpen.Foundation.NxAdapters.csproj" />
+    <ProjectReference Include="..\..\..\BANxOpen.Materials\src\BANxOpen.Materials.Contracts\BANxOpen.Materials.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BANxOpen.Materials\src\BANxOpen.Materials.Core\BANxOpen.Materials.Core.csproj" />
+    <ProjectReference Include="..\..\..\BANxOpen.Materials\src\BANxOpen.Materials.NxAdapters\BANxOpen.Materials.NxAdapters.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

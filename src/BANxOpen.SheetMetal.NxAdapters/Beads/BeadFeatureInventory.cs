@@ -2,7 +2,6 @@ using NXOpen;
 using NXOpen.Features;
 using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.Foundation.NxAdapters;
-using BANxOpen.Foundation.NxAdapters.Materials;
 using BANxOpen.SheetMetal.Materials;
 
 namespace BANxOpen.SheetMetal.NxAdapters.Beads;

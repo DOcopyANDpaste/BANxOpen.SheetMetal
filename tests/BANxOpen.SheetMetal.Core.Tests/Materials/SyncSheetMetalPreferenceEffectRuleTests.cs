@@ -1,7 +1,7 @@
 using BANxOpen.Foundation.Contracts.Bodies;
 using BANxOpen.Foundation.Contracts.Common;
-using BANxOpen.Foundation.Contracts.Materials;
-using BANxOpen.Foundation.Core.Materials.Assignment;
+using BANxOpen.Materials.Contracts;
+using BANxOpen.Materials.Core.Assignment;
 using BANxOpen.SheetMetal.Materials;
 
 namespace BANxOpen.SheetMetal.Tests.Materials;

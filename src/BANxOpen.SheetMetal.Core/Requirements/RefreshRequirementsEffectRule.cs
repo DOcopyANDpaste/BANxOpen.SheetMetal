@@ -1,6 +1,6 @@
 using BANxOpen.Foundation.Contracts.Bodies;
-using BANxOpen.Foundation.Core.Materials.Assignment;
-using BANxOpen.Foundation.Core.Materials.Rules;
+using BANxOpen.Materials.Core.Assignment;
+using BANxOpen.Materials.Core.Rules;
 
 namespace BANxOpen.SheetMetal.Requirements;
 

@@ -1,6 +1,6 @@
 using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.Foundation.NxAdapters;
-using BANxOpen.Foundation.NxAdapters.Materials;
+using BANxOpen.Materials.NxAdapters;
 using BANxOpen.SheetMetal.Common;
 using BANxOpen.SheetMetal.Materials;
 using NXOpen;

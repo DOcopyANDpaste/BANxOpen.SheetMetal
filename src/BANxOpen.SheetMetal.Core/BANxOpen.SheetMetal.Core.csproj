@@ -16,7 +16,8 @@
     <ProjectReference Include="..\..\..\BANxOpen.Foundation\src\BANxOpen.Foundation.Core\BANxOpen.Foundation.Core.csproj" />
     <!-- The material engine: this project supplies IFeatureMaterialConstraintProvider implementations
          so the shared assignment pipeline can enforce sheet metal restrictions. -->
-    <ProjectReference Include="..\..\..\BANxOpen.Foundation\src\BANxOpen.Foundation.Core.Materials\BANxOpen.Foundation.Core.Materials.csproj" />
+    <ProjectReference Include="..\..\..\BANxOpen.Materials\src\BANxOpen.Materials.Contracts\BANxOpen.Materials.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\BANxOpen.Materials\src\BANxOpen.Materials.Core\BANxOpen.Materials.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

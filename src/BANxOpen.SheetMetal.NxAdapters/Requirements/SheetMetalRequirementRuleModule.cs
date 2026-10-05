@@ -1,6 +1,6 @@
-using BANxOpen.Foundation.Core.Materials.Assignment;
-using BANxOpen.Foundation.Core.Materials.Rules.Features;
-using BANxOpen.Foundation.NxAdapters.Materials;
+using BANxOpen.Materials.Core.Assignment;
+using BANxOpen.Materials.Core.Rules.Features;
+using BANxOpen.Materials.NxAdapters;
 using BANxOpen.SheetMetal.Requirements;
 
 namespace BANxOpen.SheetMetal.NxAdapters.Requirements;

@@ -1,5 +1,5 @@
 using BANxOpen.Foundation.NxAdapters;
-using BANxOpen.Foundation.NxAdapters.Materials;
+using BANxOpen.Materials.NxAdapters;
 using BANxOpen.Foundation.NxAdapters.Requirements;
 using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.Common;

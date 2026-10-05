@@ -1,8 +1,8 @@
 using NXOpen;
 using BANxOpen.Foundation.Contracts.Common;
-using BANxOpen.Foundation.Core.Materials.Assignment;
+using BANxOpen.Materials.Core.Assignment;
 using BANxOpen.Foundation.NxAdapters;
-using BANxOpen.Foundation.NxAdapters.Materials;
+using BANxOpen.Materials.NxAdapters;
 using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.NxAdapters.Common;
 using BANxOpen.SheetMetal.Requirements;
