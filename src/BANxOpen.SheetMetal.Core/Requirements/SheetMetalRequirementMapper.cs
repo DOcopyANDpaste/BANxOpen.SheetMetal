@@ -49,6 +49,10 @@ public static class SheetMetalRequirementMapper
             : $"Used by: {string.Join(", ", requirement.Users.Select(u => u.Label))}";
         var sourceLine = $"{SourcePrefix}{(string.IsNullOrEmpty(requirement.Source) ? "unknown" : requirement.Source)}";
 
+        // The NX name is the SPEC alone (BA_REQ_BEAD_B1005010_3_GRADE): the Standard and domain made it too long to
+        // read in the Part Navigator, and the full identity is kept in the description's bookkeeping line regardless.
+        var nameStem = $"{NameAliasFor(requirement.Domain)}_{requirement.SpecId}";
+
         return new[]
         {
             new RequirementSpec(
@@ -67,7 +71,8 @@ public static class SheetMetalRequirementMapper
                     usersLine,
                     sourceLine,
                 },
-                users),
+                users,
+                nameStem),
             new RequirementSpec(
                 requirement.Domain,
                 requirement.Key,
@@ -83,8 +88,16 @@ public static class SheetMetalRequirementMapper
                     usersLine,
                     sourceLine,
                 },
-                users),
+                users,
+                nameStem),
         };
+    }
+
+    /// <summary>The short word a domain's requirement names start with: "SHEETMETAL.BEAD" → "BEAD".</summary>
+    private static string NameAliasFor(string domain)
+    {
+        var dot = domain.LastIndexOf('.');
+        return dot >= 0 ? domain.Substring(dot + 1) : domain;
     }
 
     /// <summary>The requirements held in the part for one domain. A key with only one of its two aspects, or with a

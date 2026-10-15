@@ -5,7 +5,7 @@ using BANxOpen.SheetMetal.Materials;
 namespace BANxOpen.SheetMetal.Requirements;
 
 /// <summary>The requirements a body's beads impose, one per SPEC — the same grouping as the SPEC's shared driving
-/// expressions (<c>Bead_{Std}_{Spec}_*</c>), since every bead on a SPEC carries the same row's values.
+/// expressions (<c>Bead_{Spec}_*</c>), since every bead on a SPEC carries the same row's values.
 ///
 /// Which thickness a SPEC was built at, first match wins:
 /// <list type="number">

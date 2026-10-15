@@ -6,7 +6,7 @@ namespace BANxOpen.SheetMetal.Requirements;
 /// that row allows.
 ///
 /// Pinned to the BUILT thickness, not to every thickness the SPEC family covers: the feature's driving values (a
-/// bead's <c>Bead_{Std}_{Spec}_Depth/_Radius/_DieRadius</c> expressions) hold that one row's values, so any other
+/// bead's <c>Bead_{Spec}_Depth/_Radius/_DieRadius</c> expressions) hold that one row's values, so any other
 /// thickness leaves the feature on the wrong row's geometry until it is re-applied.</summary>
 public sealed record SheetMetalAllowance(double BuiltThickness, IReadOnlyList<string> Grades)
 {

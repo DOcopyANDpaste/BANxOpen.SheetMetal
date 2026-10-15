@@ -67,9 +67,11 @@ public sealed class BeadFeatureService
         if (!TryCreateBuilder(existingFeature, out var builder, out var failure))
             return failure!;
 
+        Section? section = null;
+        var committed = false;
         try
         {
-            Configure(builder!, chain, existingFeature, side);
+            section = Configure(builder!, chain, existingFeature, side);
 
             // The builder's own Height/Radius/DieRadius are pre-created NXOpen.Expression handles (owned by
             // the builder, not settable as objects); they are pointed at the named expressions by formula.
@@ -81,6 +83,7 @@ public sealed class BeadFeatureService
                 return OperationResult<Feature>.Fail("BEAD_VALIDATION_FAILED", invalid);
 
             var feature = builder.CommitFeature();
+            committed = true;
             return OperationResult<Feature>.Success(feature);
         }
         catch (NXException ex)
@@ -91,6 +94,26 @@ public sealed class BeadFeatureService
         finally
         {
             builder!.Destroy();
+
+            // A committed feature owns its Section; one no feature took is left behind otherwise.
+            if (!committed)
+                DestroySection(_context, section, _context.Log.Warn);
+        }
+    }
+
+    /// <summary>Destroys a Section this service created and no feature took, unless NX already freed it.</summary>
+    public static void DestroySection(NxSessionContext context, Section? section, Action<string> logWarning)
+    {
+        if (section is null || !context.IsAlive(section.Tag))
+            return;
+
+        try
+        {
+            section.Destroy();
+        }
+        catch (NXException ex)
+        {
+            logWarning($"Destroying an unused bead Section failed: NX {ex.ErrorCode}: {ex.Message}");
         }
     }
 
@@ -103,9 +126,10 @@ public sealed class BeadFeatureService
         if (!TryCreateBuilder(existingFeature, out var builder, out var failure))
             return OperationResult<BeadPreview>.Fail(failure!.ErrorCode ?? "BEAD_BUILDER_CREATE_FAILED", failure.Message ?? "");
 
+        Section? section = null;
         try
         {
-            Configure(builder!, chain, existingFeature, side);
+            section = Configure(builder!, chain, existingFeature, side);
 
             builder!.Height.SetFormula(Literal(_settings.SpecValueFor(spec, BeadFeatureParameter.Height)));
             builder.Radius.SetFormula(Literal(_settings.SpecValueFor(spec, BeadFeatureParameter.Radius)));
@@ -114,15 +138,17 @@ public sealed class BeadFeatureService
             if (Validate(builder) is { } invalid)
             {
                 builder.Destroy();
+                DestroySection(_context, section, _context.Log.Warn);
                 return OperationResult<BeadPreview>.Fail("BEAD_VALIDATION_FAILED", invalid);
             }
 
             builder.PreviewBuilder.Preview();
-            return OperationResult<BeadPreview>.Success(new BeadPreview(builder, _context.Log.Warn));
+            return OperationResult<BeadPreview>.Success(new BeadPreview(_context, builder, section, _context.Log.Warn));
         }
         catch (NXException ex)
         {
             builder!.Destroy();
+            DestroySection(_context, section, _context.Log.Warn);
             return OperationResult<BeadPreview>.Fail("BEAD_PREVIEW_FAILED", $"NX {ex.ErrorCode}: {ex.Message}");
         }
     }
@@ -144,7 +170,9 @@ public sealed class BeadFeatureService
         }
     }
 
-    private void Configure(BeadBuilder builder, IReadOnlyList<NXObject> chain, Feature? existingFeature, BeadBuilder.HeightSideOptions side)
+    /// <returns>The Section created for a new bead's chain, for the caller to destroy should no feature take it; null
+    /// for an existing bead, whose Section is left untouched.</returns>
+    private Section? Configure(BeadBuilder builder, IReadOnlyList<NXObject> chain, Feature? existingFeature, BeadBuilder.HeightSideOptions side)
     {
         builder.IncludeRounding = true;
         builder.CrossSectionType = BeadBuilder.CrossSectionTypeOptions.Circular;
@@ -157,13 +185,13 @@ public sealed class BeadFeatureService
         builder.ParentFeatureInternal = false;
 
         if (existingFeature is not null)
-            return;
+            return null;
 
         // NX's own default for a new bead, as the Bead dialog records it: linked to the Sheet Metal Preferences'
         // Minimum Tool Clearance expression. A builder opened through the API does not get that link by itself.
         builder.MinimumToolClearance.SetFormula(_context.WorkPart.Preferences.SheetMetalPreferences.GetMinimumToolClearance().Name);
 
-        SetChainSection(builder, chain);
+        return SetChainSection(builder, chain);
     }
 
     /// <summary>Null when NX accepts the builder's data, else why not.</summary>
@@ -181,23 +209,30 @@ public sealed class BeadFeatureService
 
     /// <summary>Gives the builder a new Section holding the chain, in the order the recorded Bead dialog journal
     /// does it: no slave sketch, then the Section assigned. The builder's own Section is not filled in place.</summary>
-    private void SetChainSection(BeadBuilder builder, IReadOnlyList<NXObject> chain)
+    private Section SetChainSection(BeadBuilder builder, IReadOnlyList<NXObject> chain)
     {
         builder.Sketch = null;
-        builder.Section = CurveSectionFactory.Create(_context.WorkPart, chain);
+        var section = CurveSectionFactory.Create(_context.WorkPart, chain);
+        builder.Section = section;
+        return section;
     }
 }
 
 /// <summary>One bead's live preview: the open builder NX draws it from. Disposing removes the preview and destroys
-/// the builder without committing, so the part is left exactly as it was. Safe to dispose twice.</summary>
+/// the builder — and the Section it was given — without committing, so the part is left exactly as it was. Safe to
+/// dispose twice.</summary>
 public sealed class BeadPreview : IDisposable
 {
+    private readonly NxSessionContext _context;
     private BeadBuilder? _builder;
+    private Section? _section;
     private readonly Action<string> _logWarning;
 
-    internal BeadPreview(BeadBuilder builder, Action<string> logWarning)
+    internal BeadPreview(NxSessionContext context, BeadBuilder builder, Section? section, Action<string> logWarning)
     {
+        _context = context;
         _builder = builder;
+        _section = section;
         _logWarning = logWarning;
     }
 
@@ -226,5 +261,8 @@ public sealed class BeadPreview : IDisposable
         {
             _logWarning($"Destroying a bead preview builder failed: NX {ex.ErrorCode}: {ex.Message}");
         }
+
+        BeadFeatureService.DestroySection(_context, _section, _logWarning);
+        _section = null;
     }
 }

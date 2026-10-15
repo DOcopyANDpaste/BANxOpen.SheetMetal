@@ -50,6 +50,10 @@ public sealed class SheetMetalRequirementService
     /// <summary>The part's sheet metal requirements, for a caller that wants to judge by them.</summary>
     public (IReadOnlyList<SheetMetalRequirement> Requirements, IReadOnlyList<string> Errors) Read() => _reader.ReadAll();
 
+    /// <summary>Diagnostic: the bead requirements' checks and the objects they hold, alive or dead
+    /// (<see cref="IPartRequirementStore.Audit"/>).</summary>
+    public IReadOnlyList<string> AuditBeads() => _store.Audit(BeadMaterialConstraintProvider.ProviderDomainId);
+
     /// <summary>Rewrites the bead requirements for <paramref name="bodyId"/>'s beads.</summary>
     /// <param name="rebuilt">The SPEC rows applied in this run, by (Standard, SPEC id): those SPECs' requirements take
     /// the applied row's thickness and grades.</param>
@@ -102,17 +106,26 @@ public sealed class SheetMetalRequirementService
     }
 
     /// <summary>Creates <see cref="SheetMetalRequirementNames.GradeExpression"/>, or points it back at the grade
-    /// attribute if someone repointed it.</summary>
+    /// attribute if someone repointed it — and makes it re-read the attribute either way.
+    ///
+    /// The expression reads a part attribute, which is outside NX's update graph: when the attribute changes nothing
+    /// marks the expression out of date, and the Expressions dialog shows its value with a '?'. The GRADE check then
+    /// has no current value and reports Unknown. Editing the formula (even to itself) and running an update makes NX
+    /// evaluate it now, before the checks are evaluated.</summary>
     private OperationResult EnsureGradeExpression()
     {
         var formula = SheetMetalRequirementNames.GradeExpressionFormula;
         try
         {
-            var existing = FindExpression(SheetMetalRequirementNames.GradeExpression);
-            if (existing is null)
-                _context.WorkPart.Expressions.CreateExpression("String", $"{SheetMetalRequirementNames.GradeExpression}={formula}");
-            else if (existing.RightHandSide != formula)
-                _context.WorkPart.Expressions.Edit(existing, formula);
+            var expression = FindExpression(SheetMetalRequirementNames.GradeExpression);
+            if (expression is null)
+                expression = _context.WorkPart.Expressions.CreateExpression("String", $"{SheetMetalRequirementNames.GradeExpression}={formula}");
+            else
+                _context.WorkPart.Expressions.Edit(expression, formula);
+
+            UpdateNow();
+            _context.Log.Debug($"'{SheetMetalRequirementNames.GradeExpression}' = '{SafeStringValue(expression)}' " +
+                               $"(from part attribute '{SheetMetalRequirementNames.GradeAttribute}').");
 
             return OperationResult.Success();
         }
@@ -121,6 +134,30 @@ public sealed class SheetMetalRequirementService
             _context.Log.Error($"The '{SheetMetalRequirementNames.GradeExpression}' expression could not be written: NX {ex.ErrorCode}: {ex.Message}");
             return OperationResult.Fail(
                 "GRADE_EXPRESSION_FAILED", $"The '{SheetMetalRequirementNames.GradeExpression}' expression could not be written: NX {ex.ErrorCode}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Runs NX's update on an invisible mark nested in the caller's: the caller's own mark still takes the
+    /// whole Apply back.</summary>
+    private void UpdateNow()
+    {
+        var session = _context.Session;
+        var mark = session.SetUndoMark(Session.MarkVisibility.Invisible, "Update grade expression");
+        var errors = session.UpdateManager.DoUpdate(mark);
+        if (errors != 0)
+            _context.Log.Warn($"NX reported {errors} update error(s) while refreshing '{SheetMetalRequirementNames.GradeExpression}'.");
+        session.DeleteUndoMark(mark, null);
+    }
+
+    private static string SafeStringValue(Expression expression)
+    {
+        try
+        {
+            return expression.StringValue;
+        }
+        catch (NXException ex)
+        {
+            return $"(unreadable: NX {ex.ErrorCode})";
         }
     }
 

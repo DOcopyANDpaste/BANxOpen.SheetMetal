@@ -18,13 +18,17 @@ public sealed class ExpressionService
 
     public ExpressionService(NxSessionContext context) => _context = context;
 
+    /// <summary>Named <c>Bead_&lt;SPEC&gt;_Depth/_Radius/_DieRadius</c>, e.g. <c>Bead_B1005010_3_Depth</c>. Expressions an
+    /// earlier version named <c>Bead_&lt;Standard&gt;_&lt;SPEC&gt;_*</c> are renamed in place, so the beads bound to them
+    /// keep their link.</summary>
     public BeadExpressionSet EnsureSpecExpressions(string standardId, string specId, double depth, double radius, double dieRadius, Unit lengthUnit)
     {
-        var prefix = $"Bead_{Sanitize(standardId)}_{Sanitize(specId)}";
+        var prefix = $"Bead_{Token(specId)}";
+        var legacyPrefix = $"Bead_{Sanitize(standardId)}_{Sanitize(specId)}";
         return new BeadExpressionSet(
-            EnsureNamedExpression($"{prefix}_Depth", depth, lengthUnit),
-            EnsureNamedExpression($"{prefix}_Radius", radius, lengthUnit),
-            EnsureNamedExpression($"{prefix}_DieRadius", dieRadius, lengthUnit));
+            EnsureNamedExpression($"{prefix}_Depth", $"{legacyPrefix}_Depth", depth, lengthUnit),
+            EnsureNamedExpression($"{prefix}_Radius", $"{legacyPrefix}_Radius", radius, lengthUnit),
+            EnsureNamedExpression($"{prefix}_DieRadius", $"{legacyPrefix}_DieRadius", dieRadius, lengthUnit));
     }
 
     /// <summary>Points a Bead builder's Height/Radius/DieRadius Expression handle (builder-owned, read-only
@@ -39,14 +43,24 @@ public sealed class ExpressionService
     ///
     /// Locked against hand edits (<see cref="Expression.IsNoEdit"/>): a SPEC value typed over in the Expressions dialog
     /// would silently put every bead on the SPEC off-spec. Unlocked only for this tool's own edit.</summary>
-    private Expression EnsureNamedExpression(string name, double value, Unit unit)
+    private Expression EnsureNamedExpression(string name, string legacyName, double value, Unit unit)
     {
         var expressions = _context.WorkPart.Expressions;
         var formula = value.ToString(CultureInfo.InvariantCulture);
 
         // Looked up by name rather than FindObject-and-catch: that catch also swallowed a failed edit, and then
         // tried to create a second expression with the same name.
-        var existing = expressions.Cast<Expression>().FirstOrDefault(e => e.Name == name);
+        var all = expressions.Cast<Expression>().ToList();
+        var existing = all.FirstOrDefault(e => e.Name == name);
+        if (existing is null && all.FirstOrDefault(e => e.Name == legacyName) is { } legacy)
+        {
+            // NX carries the rename into every formula that references it, so the beads stay bound.
+            using (NxExpressionLock.Unlocked(legacy))
+                expressions.Rename(legacy, name);
+            _context.Log.Debug($"Expression '{legacyName}' renamed to '{name}'.");
+            existing = legacy;
+        }
+
         if (existing is not null)
         {
             using (NxExpressionLock.Unlocked(existing))
@@ -62,5 +76,9 @@ public sealed class ExpressionService
         return created;
     }
 
+    /// <summary>The naming before the Standard was dropped: punctuation removed.</summary>
     private static string Sanitize(string value) => new(value.Where(char.IsLetterOrDigit).ToArray());
+
+    /// <summary>Punctuation becomes '_', so <c>B1005010-3</c> and <c>B10050103</c> stay distinct.</summary>
+    private static string Token(string value) => new(value.Select(c => char.IsLetterOrDigit(c) && c < 128 ? c : '_').ToArray());
 }
