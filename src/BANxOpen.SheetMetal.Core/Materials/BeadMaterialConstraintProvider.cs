@@ -58,13 +58,11 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
     private readonly IBeadSpecLookup _specs;
     private readonly SheetMetalMaterialTable _table;
     private readonly BeadSettings _settings;
-    private readonly ISheetMetalRequirementReader? _requirements;
+    private readonly ISheetMetalRequirementReader _requirements;
 
-    /// <param name="requirements">The part's sheet metal requirements. Null to judge every bead from the workbooks, as
-    /// before requirements existed.</param>
     public BeadMaterialConstraintProvider(
         IFeatureInventory inventory, IBeadSpecLookup specs, SheetMetalMaterialTable table, BeadSettings settings,
-        ISheetMetalRequirementReader? requirements = null)
+        ISheetMetalRequirementReader requirements)
     {
         _inventory = inventory;
         _specs = specs;
@@ -131,25 +129,22 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
         // SPECs with a requirement in the part are the requirement provider's to judge. When the requirements could not
         // all be read nothing is handed over: that provider blocks on the read error, and the workbook check below keeps
         // every bead guarded even if it is not registered.
-        if (_requirements is not null)
+        var (requirements, errors) = _requirements.ReadAll();
+        var covered = requirements
+            .Where(r => r.Domain == ProviderDomainId)
+            .ToDictionary(r => (r.StandardId, r.SpecId), r => r);
+
+        foreach (var spec in distinct.Where(s => covered.ContainsKey((s.StandardId, s.SpecId))))
         {
-            var (requirements, errors) = _requirements.ReadAll();
-            var covered = requirements
-                .Where(r => r.Domain == ProviderDomainId)
-                .ToDictionary(r => (r.StandardId, r.SpecId), r => r);
-
-            foreach (var spec in distinct.Where(s => covered.ContainsKey((s.StandardId, s.SpecId))))
+            if (DriftMessage(covered[(spec.StandardId, spec.SpecId)], spec.Family) is { } drift)
             {
-                if (DriftMessage(covered[(spec.StandardId, spec.SpecId)], spec.Family) is { } drift)
-                {
-                    constraints.Add(new MaterialConstraint(
-                        DomainId, spec.Label, RequirementOutOfDateCode, _ => false, _ => drift, ConstraintSeverity.Warn));
-                }
+                constraints.Add(new MaterialConstraint(
+                    DomainId, spec.Label, RequirementOutOfDateCode, _ => false, _ => drift, ConstraintSeverity.Warn));
             }
-
-            if (errors.Count == 0)
-                distinct = distinct.Where(s => !covered.ContainsKey((s.StandardId, s.SpecId))).ToList();
         }
+
+        if (errors.Count == 0)
+            distinct = distinct.Where(s => !covered.ContainsKey((s.StandardId, s.SpecId))).ToList();
 
         if (distinct.Count > 0)
         {

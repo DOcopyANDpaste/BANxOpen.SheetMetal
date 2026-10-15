@@ -1,6 +1,6 @@
 using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.Requirements;
-using static BANxOpen.SheetMetal.Tests.Requirements.RequirementFixtures;
+using static BANxOpen.SheetMetal.Tests.RequirementFixtures;
 
 namespace BANxOpen.SheetMetal.Tests.Requirements;
 

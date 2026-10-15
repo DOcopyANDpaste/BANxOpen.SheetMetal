@@ -23,7 +23,7 @@ public class SheetMetalPreferenceConstraintProviderTests
         new("2024-O_0.020", IsMaterialTableEntry: true, Thickness: 0.02, sheetMetalBodies, Table.Find("2024-O_0.020"));
 
     private static SheetMetalPreferenceConstraintProvider Provider(SheetMetalPreferenceRead read) =>
-        new(new FixedReader(read), Table);
+        new(new FixedPreferenceReader(read), Table);
 
     private static SheetMetalPreferenceConstraintProvider Provider(int sheetMetalBodies = 1) =>
         Provider(SheetMetalPreferenceRead.Of(Preference(sheetMetalBodies)));
@@ -101,14 +101,5 @@ public class SheetMetalPreferenceConstraintProviderTests
             .Where(name => Gate(Provider(), name).Decision != RuleDecision.Block);
 
         Assert.Equal(new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6" }, allowed);
-    }
-
-    private sealed class FixedReader : ISheetMetalPreferenceReader
-    {
-        private readonly SheetMetalPreferenceRead _read;
-
-        public FixedReader(SheetMetalPreferenceRead read) => _read = read;
-
-        public SheetMetalPreferenceRead ReadFor(BodyId bodyId) => _read;
     }
 }

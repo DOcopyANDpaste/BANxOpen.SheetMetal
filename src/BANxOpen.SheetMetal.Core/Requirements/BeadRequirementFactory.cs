@@ -1,4 +1,5 @@
 using BANxOpen.SheetMetal.Beads;
+using BANxOpen.SheetMetal.Beads.Rules;
 using BANxOpen.SheetMetal.Materials;
 
 namespace BANxOpen.SheetMetal.Requirements;
@@ -77,13 +78,13 @@ public static class BeadRequirementFactory
                 allowance = AllowanceOf(baseline);
                 source = $"{baseline.WorkbookName} (baseline from the sheet's thickness when first recorded)";
                 notes.Add($"{FeatureNoun} {specId} (Standard {standardId}) had no requirement; it was recorded at the " +
-                          $"sheet's current {SheetMetalAllowance.FormatThickness(thickness)} in.");
+                          $"sheet's current {ThicknessMatchRule.Format(thickness)} in.");
             }
             else
             {
                 notes.Add($"{FeatureNoun} {specId} (Standard {standardId}) has no requirement, and none could be " +
                           (currentThickness is { } t
-                              ? $"recorded: the SPEC is not driven for the sheet's {SheetMetalAllowance.FormatThickness(t)} in. Re-apply its beads at a thickness it covers."
+                              ? $"recorded: the SPEC is not driven for the sheet's {ThicknessMatchRule.Format(t)} in. Re-apply its beads at a thickness it covers."
                               : "recorded: the sheet's thickness is unknown."));
             }
 

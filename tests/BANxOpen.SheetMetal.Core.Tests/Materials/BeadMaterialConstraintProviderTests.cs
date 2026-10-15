@@ -48,7 +48,8 @@ public class BeadMaterialConstraintProviderTests
 
     private static BeadMaterialConstraintProvider Provider(
         IEnumerable<FeatureSpecStamp> stamps, IEnumerable<UnstampedFeature> unstamped, params BeadSpecRow[] workbookRows) =>
-        new(new FakeInventory(stamps, unstamped), new FakeSpecLookup(workbookRows), Table, BeadSettings.Default);
+        new(new FixedInventory(new BodyFeatureInventory(stamps.ToList(), unstamped.ToList()), BodyId),
+            new SpecLookup(workbookRows), Table, BeadSettings.Default, new FakeRequirementReader());
 
     private static BeadMaterialConstraintProvider Provider(
         IEnumerable<FeatureSpecStamp> stamps, params BeadSpecRow[] workbookRows) =>
@@ -326,7 +327,7 @@ public class BeadMaterialConstraintProviderTests
     {
         var provider = new BeadMaterialConstraintProvider(
             new FixedInventory(BodyFeatureInventory.Unreadable("NX 12345: feature list unavailable")),
-            new FakeSpecLookup(Array.Empty<BeadSpecRow>()), Table, BeadSettings.Default);
+            new SpecLookup(Array.Empty<BeadSpecRow>()), Table, BeadSettings.Default, new FakeRequirementReader());
 
         var outcome = Gate(provider, "Aluminum 2024-O");
 
@@ -369,38 +370,5 @@ public class BeadMaterialConstraintProviderTests
         var materialDirection = Gate(Provider(new[] { Stamp("B1005010-1") }, spec), materialName);
 
         Assert.Equal(specDirection.Decision == RuleDecision.Allow, materialDirection.Decision == RuleDecision.Allow);
-    }
-
-    private sealed class FakeInventory : IFeatureInventory
-    {
-        private readonly BodyFeatureInventory _inventory;
-
-        public FakeInventory(IEnumerable<FeatureSpecStamp> stamps, IEnumerable<UnstampedFeature> unstamped) =>
-            _inventory = new BodyFeatureInventory(stamps.ToList(), unstamped.ToList());
-
-        public BodyFeatureInventory Read(BodyId bodyId) => bodyId == BodyId ? _inventory : BodyFeatureInventory.Empty;
-    }
-
-    private sealed class FixedInventory : IFeatureInventory
-    {
-        private readonly BodyFeatureInventory _inventory;
-
-        public FixedInventory(BodyFeatureInventory inventory) => _inventory = inventory;
-
-        public BodyFeatureInventory Read(BodyId bodyId) => _inventory;
-    }
-
-    private sealed class FakeSpecLookup : IBeadSpecLookup
-    {
-        private readonly IReadOnlyList<BeadSpecRow> _rows;
-
-        public FakeSpecLookup(IEnumerable<BeadSpecRow> rows) => _rows = rows.ToList();
-
-        public IReadOnlyList<BeadSpecRow> FindAll(string standardId, string specId) =>
-            _rows.Where(r => r.StandardId == standardId && r.SpecId == specId)
-                .OrderBy(r => r.Thickness)
-                .ToList();
-
-        public IReadOnlyList<BeadSpecRow> AllSpecs() => _rows;
     }
 }

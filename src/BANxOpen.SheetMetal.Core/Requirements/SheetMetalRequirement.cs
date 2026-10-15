@@ -1,4 +1,3 @@
-using System.Globalization;
 using BANxOpen.SheetMetal.Beads.Rules;
 
 namespace BANxOpen.SheetMetal.Requirements;
@@ -20,11 +19,9 @@ public sealed record SheetMetalAllowance(double BuiltThickness, IReadOnlyList<st
 
     public bool MatchesThickness(double thickness) => ThicknessMatchRule.Matches(thickness, BuiltThickness);
 
-    public string ThicknessText => FormatThickness(BuiltThickness);
+    public string ThicknessText => ThicknessMatchRule.Format(BuiltThickness);
 
     public string GradesText => Grades.Count == 0 ? "no grade" : string.Join(", ", Grades);
-
-    public static string FormatThickness(double thickness) => thickness.ToString("0.0###", CultureInfo.InvariantCulture);
 }
 
 /// <summary>A feature that relies on a requirement — highlighted by its check in NX, and named in its messages.</summary>

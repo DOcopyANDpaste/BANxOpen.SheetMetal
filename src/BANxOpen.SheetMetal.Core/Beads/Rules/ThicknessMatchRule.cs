@@ -1,3 +1,4 @@
+using System.Globalization;
 using BANxOpen.Foundation.Core.RuleEngine;
 
 namespace BANxOpen.SheetMetal.Beads.Rules;
@@ -12,6 +13,10 @@ public sealed class ThicknessMatchRule : IGateRule<BeadValidationContext, RuleOu
     /// <summary>The one thickness comparison: SPEC validation, allowed grades and the preferences check all use it.</summary>
     public static bool Matches(double a, double b) => Math.Abs(a - b) <= ToleranceInches;
 
+    /// <summary>The one way a thickness is written for the user, in messages, dropdowns and the requirements stored in
+    /// the part. Invariant, since requirement text is persisted.</summary>
+    public static string Format(double thickness) => thickness.ToString("0.####", CultureInfo.InvariantCulture);
+
     public string RuleId => "THICKNESS_MATCH";
     public int Order => 100;
 
@@ -24,7 +29,7 @@ public sealed class ThicknessMatchRule : IGateRule<BeadValidationContext, RuleOu
             RuleId,
             RuleDecision.Block,
             "THICKNESS_MISMATCH",
-            $"SPEC '{context.Candidate.SpecId}' is driven for {context.Candidate.Thickness:0.###} in material, " +
-            $"but this sheet metal is {context.Profile.Thickness:0.###} in.");
+            $"SPEC '{context.Candidate.SpecId}' is driven for {Format(context.Candidate.Thickness)} in material, " +
+            $"but this sheet metal is {Format(context.Profile.Thickness)} in.");
     }
 }

@@ -1,5 +1,5 @@
-using System.Globalization;
 using BANxOpen.Foundation.Contracts.Requirements;
+using BANxOpen.Foundation.Core.Requirements;
 using BANxOpen.SheetMetal.Beads.Rules;
 
 namespace BANxOpen.SheetMetal.Requirements;
@@ -155,11 +155,11 @@ public interface ISheetMetalRequirementReader
 /// <summary>The default reader: each domain's requirements through the Foundation store.</summary>
 public sealed class SheetMetalRequirementReader : ISheetMetalRequirementReader
 {
-    private readonly Foundation.Core.Requirements.IPartRequirementStore _store;
+    private readonly IPartRequirementStore _store;
     private readonly IReadOnlyList<(string Domain, string FeatureNoun)> _domains;
 
     public SheetMetalRequirementReader(
-        Foundation.Core.Requirements.IPartRequirementStore store, IReadOnlyList<(string Domain, string FeatureNoun)> domains)
+        IPartRequirementStore store, IReadOnlyList<(string Domain, string FeatureNoun)> domains)
     {
         _store = store;
         _domains = domains;

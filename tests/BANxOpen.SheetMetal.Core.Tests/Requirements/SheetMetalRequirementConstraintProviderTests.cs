@@ -7,7 +7,7 @@ using BANxOpen.Foundation.Core.RuleEngine;
 using BANxOpen.SheetMetal.Materials;
 using BANxOpen.SheetMetal.Requirements;
 using BANxOpen.SheetMetal.Tests.Materials;
-using static BANxOpen.SheetMetal.Tests.Requirements.RequirementFixtures;
+using static BANxOpen.SheetMetal.Tests.RequirementFixtures;
 
 namespace BANxOpen.SheetMetal.Tests.Requirements;
 

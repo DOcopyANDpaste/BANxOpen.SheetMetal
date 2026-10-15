@@ -3,9 +3,11 @@ using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.Common;
 using BANxOpen.SheetMetal.Materials;
 using BANxOpen.SheetMetal.Requirements;
+using BANxOpen.SheetMetal.SpecData;
 
-namespace BANxOpen.SheetMetal.Tests.Requirements;
+namespace BANxOpen.SheetMetal.Tests;
 
+/// <summary>Data builders for the requirement tests.</summary>
 internal static class RequirementFixtures
 {
     public const string Standard = "XX_Standard";
@@ -37,33 +39,65 @@ internal static class RequirementFixtures
     public static readonly IReadOnlyDictionary<(string StandardId, string SpecId), BeadSpecRow> NothingRebuilt =
         new Dictionary<(string, string), BeadSpecRow>();
 
-    public sealed class FakeRequirementReader : ISheetMetalRequirementReader
-    {
-        private readonly IReadOnlyList<SheetMetalRequirement> _requirements;
-        private readonly IReadOnlyList<string> _errors;
-
-        public FakeRequirementReader(IEnumerable<SheetMetalRequirement> requirements, params string[] errors)
-        {
-            _requirements = requirements.ToList();
-            _errors = errors;
-        }
-
-        public FakeRequirementReader(params SheetMetalRequirement[] requirements) : this(requirements.AsEnumerable()) { }
-
-        public (IReadOnlyList<SheetMetalRequirement> Requirements, IReadOnlyList<string> Errors) ReadAll() => (_requirements, _errors);
-    }
-
-    public sealed class FixedPreferenceReader : ISheetMetalPreferenceReader
-    {
-        private readonly SheetMetalPreferenceRead _read;
-
-        public FixedPreferenceReader(SheetMetalPreferenceRead read) => _read = read;
-
-        public SheetMetalPreferenceRead ReadFor(BodyId bodyId) => _read;
-    }
-
     public static SheetMetalPreferenceRead SheetMetalBody(SheetMetalMaterialTable table, string? preferenceRow = null, double? bodyThickness = 0.02) =>
         SheetMetalPreferenceRead.Of(
             new SheetMetalPartPreference(preferenceRow, IsMaterialTableEntry: true, Thickness: 0.02, SheetMetalBodyCount: 1, table.Find(preferenceRow)),
             bodyThickness);
+}
+
+internal sealed class FakeRequirementReader : ISheetMetalRequirementReader
+{
+    private readonly IReadOnlyList<SheetMetalRequirement> _requirements;
+    private readonly IReadOnlyList<string> _errors;
+
+    public FakeRequirementReader(IEnumerable<SheetMetalRequirement> requirements, params string[] errors)
+    {
+        _requirements = requirements.ToList();
+        _errors = errors;
+    }
+
+    public FakeRequirementReader(params SheetMetalRequirement[] requirements) : this(requirements.AsEnumerable()) { }
+
+    public (IReadOnlyList<SheetMetalRequirement> Requirements, IReadOnlyList<string> Errors) ReadAll() => (_requirements, _errors);
+}
+
+internal sealed class FixedPreferenceReader : ISheetMetalPreferenceReader
+{
+    private readonly SheetMetalPreferenceRead _read;
+
+    public FixedPreferenceReader(SheetMetalPreferenceRead read) => _read = read;
+
+    public SheetMetalPreferenceRead ReadFor(BodyId bodyId) => _read;
+}
+
+/// <summary>A feature inventory that reports the same read for every body, or only for <c>onlyFor</c> when given (other
+/// bodies then have no features).</summary>
+internal sealed class FixedInventory : IFeatureInventory
+{
+    private readonly BodyFeatureInventory _inventory;
+    private readonly BodyId? _onlyFor;
+
+    public FixedInventory(BodyFeatureInventory inventory, BodyId? onlyFor = null)
+    {
+        _inventory = inventory;
+        _onlyFor = onlyFor;
+    }
+
+    public BodyFeatureInventory Read(BodyId bodyId) =>
+        _onlyFor is { } only && bodyId != only ? BodyFeatureInventory.Empty : _inventory;
+}
+
+/// <summary>SPEC workbook rows in memory, each SPEC's family ordered by thickness like the real cache.</summary>
+internal sealed class SpecLookup : IBeadSpecLookup
+{
+    private readonly IReadOnlyList<BeadSpecRow> _rows;
+
+    public SpecLookup(IEnumerable<BeadSpecRow> rows) => _rows = rows.ToList();
+
+    public IReadOnlyList<BeadSpecRow> FindAll(string standardId, string specId) =>
+        _rows.Where(r => r.StandardId == standardId && r.SpecId == specId)
+            .OrderBy(r => r.Thickness)
+            .ToList();
+
+    public IReadOnlyList<BeadSpecRow> AllSpecs() => _rows;
 }

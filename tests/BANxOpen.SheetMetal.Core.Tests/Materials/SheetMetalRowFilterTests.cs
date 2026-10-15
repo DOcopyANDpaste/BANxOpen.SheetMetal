@@ -92,4 +92,27 @@ public class SheetMetalRowFilterTests
         Assert.Equal(new[] { "0.06", "0.12", "@bend_table_1", "@BEND_TABLE_2" },
             SheetMetalRowFilter.None.BendRadiusOptions(rows));
     }
+
+    [Fact]
+    public void ForRow_leaves_only_that_row()
+    {
+        var row = Rows.Single(r => r.Name == "2024-O_0.032");
+
+        var filter = SheetMetalRowFilter.ForRow(row);
+
+        Assert.Equal(new SheetMetalRowFilter("XX_Standard", "Aluminum 2024-O", 0.032, "0.06"), filter);
+        Assert.Equal(new[] { "2024-O_0.032" }, Names(filter.Apply(Rows)));
+    }
+
+    [Fact]
+    public void ForRow_treats_a_blank_standard_or_bend_radius_as_any()
+    {
+        var row = TableRows.Row("r", "Aluminum 2024-O", "2024-O", standard: " ") with { BendRadius = "" };
+
+        var filter = SheetMetalRowFilter.ForRow(row);
+
+        Assert.Null(filter.Standard);
+        Assert.Null(filter.BendRadius);
+        Assert.Equal(new[] { "2024-O_0.020" }, Names(filter.Apply(Rows)));
+    }
 }

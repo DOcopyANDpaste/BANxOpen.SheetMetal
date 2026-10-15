@@ -6,7 +6,7 @@ using BANxOpen.SheetMetal.Materials;
 using BANxOpen.SheetMetal.Requirements;
 using BANxOpen.SheetMetal.SpecData;
 using BANxOpen.SheetMetal.Tests.Materials;
-using static BANxOpen.SheetMetal.Tests.Requirements.RequirementFixtures;
+using static BANxOpen.SheetMetal.Tests.RequirementFixtures;
 
 namespace BANxOpen.SheetMetal.Tests.Requirements;
 
@@ -16,10 +16,13 @@ public class BeadProviderWithRequirementsTests
 {
     private static readonly BodyId BodyId = new("body-1");
 
+    private static readonly BodyFeatureInventory OneStamp =
+        new(new[] { new FeatureSpecStamp(Standard, "B1005010-2", "101", "BEAD(1)") }, Array.Empty<UnstampedFeature>());
+
     private static readonly BeadSpecRow At20 = SpecRow("B1005010-2", 0.02, "2024-O");
 
     private static BeadMaterialConstraintProvider Provider(ISheetMetalRequirementReader requirements, params BeadSpecRow[] workbook) =>
-        new(new OneStampInventory(), new Lookup(workbook), TableRows.AluminumTable(), BeadSettings.Default, requirements);
+        new(new FixedInventory(OneStamp), new SpecLookup(workbook), TableRows.AluminumTable(), BeadSettings.Default, requirements);
 
     [Fact]
     public void A_covered_SPEC_is_left_to_the_requirement()
@@ -53,23 +56,5 @@ public class BeadProviderWithRequirementsTests
         var constraints = Provider(new FakeRequirementReader(Array.Empty<SheetMetalRequirement>(), "broken"), At20).ConstraintsFor(BodyId);
 
         Assert.Contains(constraints, c => c.ReasonCode == BeadMaterialConstraintProvider.NotAllowedCode);
-    }
-
-    private sealed class OneStampInventory : IFeatureInventory
-    {
-        public BodyFeatureInventory Read(BodyId bodyId) =>
-            new(new[] { new FeatureSpecStamp(Standard, "B1005010-2", "101", "BEAD(1)") }, Array.Empty<UnstampedFeature>());
-    }
-
-    private sealed class Lookup : IBeadSpecLookup
-    {
-        private readonly IReadOnlyList<BeadSpecRow> _rows;
-
-        public Lookup(IReadOnlyList<BeadSpecRow> rows) => _rows = rows;
-
-        public IReadOnlyList<BeadSpecRow> FindAll(string standardId, string specId) =>
-            _rows.Where(r => r.StandardId == standardId && r.SpecId == specId).OrderBy(r => r.Thickness).ToList();
-
-        public IReadOnlyList<BeadSpecRow> AllSpecs() => _rows;
     }
 }

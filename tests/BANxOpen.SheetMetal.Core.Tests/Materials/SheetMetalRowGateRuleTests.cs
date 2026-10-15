@@ -34,7 +34,9 @@ public class SheetMetalRowGateRuleTests
         string? standard = "XX_Standard")
     {
         var body = new BodyInfo(BodyId, "SM_BODY", kind, Volume: 0.0, Attributes: new Dictionary<string, string>());
-        var rule = new SheetMetalRowGateRule(new FixedReader(read ?? Read()), new SheetMetalStandardSelection(Table) { Selected = standard });
+        var rule = new SheetMetalRowGateRule(
+            new FixedPreferenceReader(read ?? Read()), new SheetMetalStandardSelection(Table) { Selected = standard },
+            new FakeRequirementReader());
         return rule.Evaluate(new MaterialAssignmentRuleContext(MakeMaterial(materialName), body, null, new[] { body })
         {
             RequestedVariant = row,
@@ -112,14 +114,5 @@ public class SheetMetalRowGateRuleTests
     public void With_no_Standard_chosen_every_Standards_rows_are_accepted()
     {
         Assert.Equal(RuleDecision.Allow, Pick("Aluminum 2024-O", "2024-O_0.020_YY", standard: null).Decision);
-    }
-
-    private sealed class FixedReader : ISheetMetalPreferenceReader
-    {
-        private readonly SheetMetalPreferenceRead _read;
-
-        public FixedReader(SheetMetalPreferenceRead read) => _read = read;
-
-        public SheetMetalPreferenceRead ReadFor(BodyId bodyId) => _read;
     }
 }

@@ -42,8 +42,6 @@ public static class SheetMetalPreferenceCheck
     /// SPEC accepts too.</summary>
     public const double ThicknessTolerance = ThicknessMatchRule.ToleranceInches;
 
-    public static bool ThicknessMatches(double a, double b) => ThicknessMatchRule.Matches(a, b);
-
     /// <param name="bodyPhysicalMaterialName">The body's physical material, or null when it has none.</param>
     /// <param name="bodyThickness">In part units.</param>
     public static SheetMetalPreferenceCheckResult Evaluate(
@@ -78,12 +76,12 @@ public static class SheetMetalPreferenceCheck
                 $"body's material is '{bodyPhysicalMaterialName}'.");
         }
 
-        if (!ThicknessMatches(bodyThickness, preference.Thickness))
+        if (!ThicknessMatchRule.Matches(bodyThickness, preference.Thickness))
         {
             return new SheetMetalPreferenceCheckResult(
                 SheetMetalPreferenceStatus.ThicknessMismatch,
-                $"This sheet metal is {bodyThickness:0.####} thick, but Sheet Metal Preferences specify " +
-                $"{preference.Thickness:0.####}. Correct the body's thickness or the preferences before validating a SPEC.");
+                $"This sheet metal is {ThicknessMatchRule.Format(bodyThickness)} thick, but Sheet Metal Preferences specify " +
+                $"{ThicknessMatchRule.Format(preference.Thickness)}. Correct the body's thickness or the preferences before validating a SPEC.");
         }
 
         return SheetMetalPreferenceCheckResult.InSync;

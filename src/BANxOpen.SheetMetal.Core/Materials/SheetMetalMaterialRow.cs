@@ -1,3 +1,5 @@
+using BANxOpen.SheetMetal.Beads.Rules;
+
 namespace BANxOpen.SheetMetal.Materials;
 
 /// <summary>One row of the MATERIAL_TABLE in NX's sheet metal material standards file: one material the Sheet Metal
@@ -30,4 +32,15 @@ public sealed record SheetMetalMaterialRow(
 {
     /// <summary>The cell under <paramref name="column"/>, or null when the table has no such column.</summary>
     public string? ValueOf(string column) => Columns.TryGetValue(column, out var value) ? value : null;
+
+    /// <summary>Standard, grade, thickness and bend radius — the columns a user filters rows on, so a row can be told
+    /// from its siblings at a glance. Blank columns are left out.</summary>
+    public string Describe()
+    {
+        var parts = new List<string> { Standard, Grade, $"THK {ThicknessMatchRule.Format(Thickness)}" };
+        if (!string.IsNullOrWhiteSpace(BendRadius))
+            parts.Add($"BR {BendRadius}");
+
+        return string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
 }

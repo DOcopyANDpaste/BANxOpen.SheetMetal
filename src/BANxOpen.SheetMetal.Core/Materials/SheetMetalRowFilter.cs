@@ -17,6 +17,14 @@ public sealed record SheetMetalRowFilter(string? Standard, string? PhysicalMater
 {
     public static readonly SheetMetalRowFilter None = new(null, null, null, null);
 
+    /// <summary>The filters that leave <paramref name="row"/> (and any row sharing all four of its values) — e.g. a
+    /// dialog opening on a part's current Sheet Metal Preferences row. A blank Standard or bend radius filters as "any".</summary>
+    public static SheetMetalRowFilter ForRow(SheetMetalMaterialRow row) =>
+        new(string.IsNullOrWhiteSpace(row.Standard) ? null : row.Standard,
+            row.PhysicalMaterialName,
+            row.Thickness,
+            string.IsNullOrWhiteSpace(row.BendRadius) ? null : row.BendRadius);
+
     public bool IsEmpty => Standard is null && PhysicalMaterialName is null && Thickness is null && BendRadius is null;
 
     public bool Matches(SheetMetalMaterialRow row) =>
@@ -67,9 +75,6 @@ public sealed record SheetMetalRowFilter(string? Standard, string? PhysicalMater
             .ThenBy(v => TryNumber(v) ?? 0)
             .ThenBy(v => v, StringComparer.OrdinalIgnoreCase)
             .ToList();
-
-    /// <summary>How a thickness is shown wherever a row is put to the user.</summary>
-    public static string FormatThickness(double thickness) => thickness.ToString("0.####", CultureInfo.CurrentCulture);
 
     private bool MatchesStandard(SheetMetalMaterialRow row) =>
         Standard is null || string.Equals(row.Standard, Standard, StringComparison.OrdinalIgnoreCase);

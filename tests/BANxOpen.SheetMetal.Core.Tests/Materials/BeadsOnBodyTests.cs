@@ -15,7 +15,7 @@ public class BeadsOnBodyTests
 
     private static IReadOnlyList<BeadOnBody> Resolve(
         IEnumerable<FeatureSpecStamp> stamps, IEnumerable<UnstampedFeature> unstamped, params BeadSpecRow[] rows) =>
-        BeadsOnBody.Resolve(new BodyFeatureInventory(stamps.ToList(), unstamped.ToList()), new Lookup(rows), BeadSettings.Default);
+        BeadsOnBody.Resolve(new BodyFeatureInventory(stamps.ToList(), unstamped.ToList()), new SpecLookup(rows), BeadSettings.Default);
 
     [Fact]
     public void A_stamped_bead_carries_its_SPEC_and_feature_key()
@@ -142,19 +142,5 @@ public class BeadsOnBodyTests
 
         Assert.Equal(BeadSpecStatus.Matched, bead.Status);
         Assert.Equal(new[] { 0.02, 0.05 }, bead.SpecFamily.Select(r => r.Thickness));
-    }
-
-    private sealed class Lookup : IBeadSpecLookup
-    {
-        private readonly IReadOnlyList<BeadSpecRow> _rows;
-
-        public Lookup(IEnumerable<BeadSpecRow> rows) => _rows = rows.ToList();
-
-        public IReadOnlyList<BeadSpecRow> FindAll(string standardId, string specId) =>
-            _rows.Where(r => r.StandardId == standardId && r.SpecId == specId)
-                .OrderBy(r => r.Thickness)
-                .ToList();
-
-        public IReadOnlyList<BeadSpecRow> AllSpecs() => _rows;
     }
 }

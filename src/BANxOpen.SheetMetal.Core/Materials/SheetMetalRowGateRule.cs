@@ -2,7 +2,7 @@ using BANxOpen.Foundation.Contracts.Bodies;
 using BANxOpen.Materials.Core.Assignment;
 using BANxOpen.Materials.Core.Rules;
 using BANxOpen.Foundation.Core.RuleEngine;
-using BANxOpen.SheetMetal.Common;
+using BANxOpen.SheetMetal.Beads.Rules;
 using BANxOpen.SheetMetal.Requirements;
 
 namespace BANxOpen.SheetMetal.Materials;
@@ -17,7 +17,7 @@ namespace BANxOpen.SheetMetal.Materials;
 /// other than the one its SPEC features were built at, or a grade they do not allow there — is refused with the
 /// requirement's reason. The user cannot talk past a requirement.</item>
 /// <item>A row whose thickness is not the body's needs confirming: usually a mistake, but the user's to make —
-/// <see cref="SheetMetalPreferenceCheck"/> reports the mismatch afterwards either way. A thickness NX will not report
+/// <c>SheetMetalPreferenceCheck</c> reports the mismatch afterwards either way. A thickness NX will not report
 /// counts as matching, since there is nothing to disagree with.</item>
 /// </list>
 /// A body that is not sheet metal, or an assignment with no row picked, is allowed: there is nothing to check, and a
@@ -31,12 +31,11 @@ public sealed class SheetMetalRowGateRule : IMaterialValidationRule
 
     private readonly ISheetMetalPreferenceReader _reader;
     private readonly SheetMetalStandardSelection _selection;
-    private readonly ISheetMetalRequirementReader? _requirements;
+    private readonly ISheetMetalRequirementReader _requirements;
 
-    /// <param name="requirements">The part's sheet metal requirements, which refuse the rows they do not allow. Null for
-    /// no requirement checking.</param>
+    /// <param name="requirements">The part's sheet metal requirements, which refuse the rows they do not allow.</param>
     public SheetMetalRowGateRule(
-        ISheetMetalPreferenceReader reader, SheetMetalStandardSelection selection, ISheetMetalRequirementReader? requirements = null)
+        ISheetMetalPreferenceReader reader, SheetMetalStandardSelection selection, ISheetMetalRequirementReader requirements)
     {
         _reader = reader;
         _selection = selection;
@@ -68,10 +67,11 @@ public sealed class SheetMetalRowGateRule : IMaterialValidationRule
         // Unreadable preferences are refused by SheetMetalPreferenceConstraintProvider; there is no thickness to
         // compare against here.
         var read = _reader.ReadFor(context.TargetBody.Id);
-        if (read.BodyThickness is { } bodyThickness && !SheetMetalPreferenceCheck.ThicknessMatches(bodyThickness, row.Thickness))
+        if (read.BodyThickness is { } bodyThickness && !ThicknessMatchRule.Matches(bodyThickness, row.Thickness))
         {
             return new RuleOutcome(Id, RuleDecision.RequireConfirmation, ThicknessMismatchCode,
-                $"'{row.Name}' is {Format(row.Thickness)} thick but this body is {Format(bodyThickness)} thick; the part's " +
+                $"'{row.Name}' is {ThicknessMatchRule.Format(row.Thickness)} thick but this body is " +
+                $"{ThicknessMatchRule.Format(bodyThickness)} thick; the part's " +
                 "material and geometry will disagree about thickness.");
         }
 
@@ -89,9 +89,6 @@ public sealed class SheetMetalRowGateRule : IMaterialValidationRule
     /// reason.</summary>
     private string? RefusalFor(SheetMetalMaterialRow row)
     {
-        if (_requirements is null)
-            return null;
-
         var (requirements, errors) = _requirements.ReadAll();
         if (errors.Count > 0)
             return "This part's sheet metal requirements could not be read, so no row can be checked against them.";
@@ -104,10 +101,6 @@ public sealed class SheetMetalRowGateRule : IMaterialValidationRule
             ? $"{refusing.Label} does not allow grade '{row.Grade}' at {allowance.ThicknessText} in " +
               $"(allowed: {allowance.GradesText})."
             : $"{refusing.Label}'s features were built at {allowance.ThicknessText} in. Re-apply them with their tool " +
-              $"at {Format(row.Thickness)} in before setting the sheet to this row.";
+              $"at {ThicknessMatchRule.Format(row.Thickness)} in before setting the sheet to this row.";
     }
-
-    /// <summary>Four decimals, matching how <see cref="SheetMetalPreferenceCheck"/> writes a thickness into its
-    /// own messages, so the same number does not appear two ways in one session.</summary>
-    private static string Format(double thickness) => SheetMetalRowFilter.FormatThickness(thickness);
 }
