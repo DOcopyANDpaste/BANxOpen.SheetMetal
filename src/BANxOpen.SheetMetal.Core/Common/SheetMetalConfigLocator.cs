@@ -31,14 +31,16 @@ public static class SheetMetalConfigLocator
     /// report a missing file far more usefully than this can.</summary>
     /// <exception cref="DirectoryNotFoundException">No candidate directory exists. The message lists
     /// everywhere that was tried, since "config not found" with no path is close to undebuggable.</exception>
-    public static string Locate() =>
+    /// <param name="text">Words the error shown at start-up; <see cref="SheetMetalText.Default"/> when null.</param>
+    public static string Locate(SheetMetalText? text = null) =>
         LocateFrom(
             Path.GetDirectoryName(new Uri(Assembly.GetExecutingAssembly().Location).LocalPath) ?? "",
-            Environment.GetEnvironmentVariable(EnvironmentVariable));
+            Environment.GetEnvironmentVariable(EnvironmentVariable),
+            text);
 
     /// <summary><see cref="Locate"/> with its inputs made explicit, so the search can be tested without
     /// depending on where the test assembly was built.</summary>
-    public static string LocateFrom(string startDirectory, string? environmentValue)
+    public static string LocateFrom(string startDirectory, string? environmentValue, SheetMetalText? text = null)
     {
         var attempted = new List<string>();
 
@@ -68,37 +70,35 @@ public static class SheetMetalConfigLocator
         }
 
         throw new DirectoryNotFoundException(
-            $"Could not locate the sheet metal config directory (a folder containing {MarkerFileName}). " +
-            $"Tried: {string.Join("; ", attempted)}. Set {EnvironmentVariable} to that folder.");
+            (text ?? SheetMetalText.Default).ConfigDirectoryNotFound(MarkerFileName, attempted, EnvironmentVariable));
     }
 
     /// <summary>See <see cref="SheetMetalSettings.Load"/>.</summary>
-    public static string SettingsPath() => Path.Combine(Locate(), MarkerFileName);
+    public static string SettingsPath(SheetMetalText? text = null) => Path.Combine(Locate(text), MarkerFileName);
 
     /// <summary>The sheet metal material standards file, from <c>materialTablePath</c> in sheetmetal-settings.json.
     /// This is the only source for now. NX's Customer Defaults are not read.</summary>
     /// <exception cref="FileNotFoundException"><c>materialTablePath</c> is not set, or names a file that does not exist.</exception>
-    public static string MaterialTablePath()
+    public static string MaterialTablePath(SheetMetalText? text = null)
     {
-        var settingsPath = SettingsPath();
-        var path = SheetMetalSettings.Load(settingsPath).MaterialTablePath
-                   ?? throw new FileNotFoundException(
-                       $"materialTablePath is not set in {settingsPath}. Set it to the sheet metal material standards file.");
+        text ??= SheetMetalText.Default;
+        var settingsPath = SettingsPath(text);
+        var path = SheetMetalSettings.Load(settingsPath, text).MaterialTablePath
+                   ?? throw new FileNotFoundException(text.MaterialTablePathNotSet(settingsPath));
 
         return File.Exists(path)
             ? path
-            : throw new FileNotFoundException(
-                $"The sheet metal material standards file set in {settingsPath} (materialTablePath) does not exist: {path}", path);
+            : throw new FileNotFoundException(text.MaterialTableFileMissing(settingsPath, path), path);
     }
 
     /// <summary>Optional: a missing file means default settings. See <c>BeadSettings.Load</c>.</summary>
-    public static string BeadSettingsPath() => Path.Combine(Locate(), "bead-settings.json");
+    public static string BeadSettingsPath(SheetMetalText? text = null) => Path.Combine(Locate(text), "bead-settings.json");
 
     /// <summary>Where parsed SPEC workbooks are cached. Created on demand: it is generated output, so it
     /// is gitignored and will not exist on a fresh clone.</summary>
-    public static string CacheDirectory()
+    public static string CacheDirectory(SheetMetalText? text = null)
     {
-        var cache = Path.Combine(Locate(), "cache");
+        var cache = Path.Combine(Locate(text), "cache");
         Directory.CreateDirectory(cache);
         return cache;
     }

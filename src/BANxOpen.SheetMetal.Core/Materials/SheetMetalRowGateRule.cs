@@ -13,9 +13,11 @@ namespace BANxOpen.SheetMetal.Materials;
 /// <list type="bullet">
 /// <item>A row that is not one of the requested material's rows under the chosen Standard
 /// (<see cref="SheetMetalStandardSelection"/>) is refused.</item>
-/// <item>A row the part's sheet metal requirements refuse (<see cref="ISheetMetalRequirementReader"/>) — a thickness
-/// other than the one its SPEC features were built at, or a grade they do not allow there — is refused with the
-/// requirement's reason. The user cannot talk past a requirement.</item>
+/// <item>A row the part's sheet metal requirements (<see cref="ISheetMetalRequirementReader"/>) do not allow — a
+/// (grade, thickness) pair not in its SPEC family — is warned about, not refused: the requirement is left as it is,
+/// and its failing NX check reminds the user to re-apply the features. A row they allow at a thickness other than the
+/// one the features were built at is warned about too, since the check passes but the geometry is the built row's.
+/// Requirements that cannot be read refuse every row.</item>
 /// <item>A row whose thickness is not the body's needs confirming: usually a mistake, but the user's to make —
 /// <c>SheetMetalPreferenceCheck</c> reports the mismatch afterwards either way. A thickness NX will not report
 /// counts as matching, since there is nothing to disagree with.</item>
@@ -25,18 +27,24 @@ namespace BANxOpen.SheetMetal.Materials;
 public sealed class SheetMetalRowGateRule : IMaterialValidationRule
 {
     public const string Id = "SHEETMETAL_PREFERENCE_ROW";
-    public const string NotOfferedCode = "SHEETMETAL_ROW_NOT_OFFERED";
-    public const string RefusedCode = "SHEETMETAL_ROW_REFUSED_BY_REQUIREMENT";
-    public const string ThicknessMismatchCode = "SHEETMETAL_ROW_THICKNESS_MISMATCH";
+    // Kept as aliases of SheetMetalCodes, which is where the codes are defined.
+    public const string NotOfferedCode = SheetMetalCodes.RowNotOffered;
+    public const string RefusedCode = SheetMetalCodes.RowRefusedByRequirement;
+    public const string ThicknessMismatchCode = SheetMetalCodes.RowThicknessMismatch;
+    public const string NeedsReapplyCode = SheetMetalCodes.RowNeedsReapply;
 
     private readonly ISheetMetalPreferenceReader _reader;
     private readonly SheetMetalStandardSelection _selection;
     private readonly ISheetMetalRequirementReader _requirements;
+    private readonly SheetMetalText _text;
 
     /// <param name="requirements">The part's sheet metal requirements, which refuse the rows they do not allow.</param>
+    /// <param name="text">Words the outcomes; <see cref="SheetMetalText.Default"/> when null.</param>
     public SheetMetalRowGateRule(
-        ISheetMetalPreferenceReader reader, SheetMetalStandardSelection selection, ISheetMetalRequirementReader requirements)
+        ISheetMetalPreferenceReader reader, SheetMetalStandardSelection selection, ISheetMetalRequirementReader requirements,
+        SheetMetalText? text = null)
     {
+        _text = text ?? SheetMetalText.Default;
         _reader = reader;
         _selection = selection;
         _requirements = requirements;
@@ -56,51 +64,104 @@ public sealed class SheetMetalRowGateRule : IMaterialValidationRule
             .FirstOrDefault(r => string.Equals(r.Name, rowName, StringComparison.Ordinal));
         if (row is null)
         {
-            return new RuleOutcome(Id, RuleDecision.Block, NotOfferedCode,
-                $"'{rowName}' is not one of the Sheet Metal Preferences materials that can be set for '{materialName}' " +
-                $"{Scope()}. Pick another row.");
+            // NotOfferedCode: row, material, standard (empty when no Standard is chosen).
+            return new RuleOutcome(Id, RuleDecision.Block, NotOfferedCode, _text.RowNotOffered(rowName, materialName, _selection.Selected))
+            {
+                Args = new Dictionary<string, string>
+                {
+                    ["row"] = rowName,
+                    ["material"] = materialName,
+                    ["standard"] = _selection.Selected ?? string.Empty,
+                },
+            };
         }
 
-        if (RefusalFor(row) is { } refusal)
-            return new RuleOutcome(Id, RuleDecision.Block, RefusedCode, $"'{row.Name}' cannot be used: {refusal}");
+        var (requirements, errors) = _requirements.ReadAll();
+        if (errors.Count > 0)
+        {
+            // A requirement that could not be read might forbid anything: the constraint provider blocks the
+            // assignment for the same reason. RefusedCode: row, rowThickness, refusal.
+            return new RuleOutcome(Id, RuleDecision.Block, RefusedCode, _text.RowRefused(row.Name, _text.RowRefusedRequirementsUnreadable))
+            {
+                Args = new Dictionary<string, string>
+                {
+                    ["row"] = row.Name,
+                    ["rowThickness"] = ThicknessMatchRule.Format(row.Thickness),
+                    ["refusal"] = "requirementsUnreadable",
+                },
+            };
+        }
+
+        var warning = RequirementWarningFor(row, requirements);
 
         // Unreadable preferences are refused by SheetMetalPreferenceConstraintProvider; there is no thickness to
         // compare against here.
         var read = _reader.ReadFor(context.TargetBody.Id);
         if (read.BodyThickness is { } bodyThickness && !ThicknessMatchRule.Matches(bodyThickness, row.Thickness))
         {
+            // ThicknessMismatchCode: row, rowThickness, bodyThickness. A requirement warning rides along in the message,
+            // since only one outcome is returned and a confirmation outranks a warning.
+            var message = _text.RowThicknessMismatch(row.Name, ThicknessMatchRule.Format(row.Thickness), ThicknessMatchRule.Format(bodyThickness));
             return new RuleOutcome(Id, RuleDecision.RequireConfirmation, ThicknessMismatchCode,
-                $"'{row.Name}' is {ThicknessMatchRule.Format(row.Thickness)} thick but this body is " +
-                $"{ThicknessMatchRule.Format(bodyThickness)} thick; the part's " +
-                "material and geometry will disagree about thickness.");
+                warning is null ? message : $"{message} {warning.Message}")
+            {
+                Args = new Dictionary<string, string>
+                {
+                    ["row"] = row.Name,
+                    ["rowThickness"] = ThicknessMatchRule.Format(row.Thickness),
+                    ["bodyThickness"] = ThicknessMatchRule.Format(bodyThickness),
+                },
+            };
         }
 
-        return Allow();
+        return warning ?? Allow();
     }
 
     private static RuleOutcome Allow() => new(Id, RuleDecision.Allow, null, null);
 
-    private string Scope() => _selection.Selected is { } standard
-        ? $"under Standard '{standard}'"
-        : "in the sheet metal material standards file";
-
-    /// <summary>Why the part's requirements refuse <paramref name="row"/>, or null when they allow it. Requirements
-    /// that cannot be read refuse every row — the constraint provider blocks the assignment for the same
-    /// reason.</summary>
-    private string? RefusalFor(SheetMetalMaterialRow row)
+    /// <summary>What the part's requirements say about <paramref name="row"/>, or null when they are content. Warned,
+    /// not blocked: the assignment keeps the requirements as they are, so their NX checks go on reporting the features
+    /// that need re-applying after this dialog has closed.</summary>
+    private RuleOutcome? RequirementWarningFor(SheetMetalMaterialRow row, IReadOnlyList<SheetMetalRequirement> requirements)
     {
-        var (requirements, errors) = _requirements.ReadAll();
-        if (errors.Count > 0)
-            return "This part's sheet metal requirements could not be read, so no row can be checked against them.";
+        var rowThickness = ThicknessMatchRule.Format(row.Thickness);
 
-        if (requirements.FirstOrDefault(r => !r.Allowance.IsSatisfiedBy(row.Thickness, row.Grade)) is not { } refusing)
-            return null;
+        if (requirements.FirstOrDefault(r => !r.Allowance.IsSatisfiedBy(row.Thickness, row.Grade)) is { } refusing)
+        {
+            // RefusedCode: row, rowThickness, refusal, requirement, grade, builtThickness, allowedPairs.
+            return new RuleOutcome(Id, RuleDecision.Warn, RefusedCode,
+                _text.RowPairNotAllowed(row.Name, refusing.Label, row.Grade, rowThickness, refusing.Allowance.PairsText))
+            {
+                Args = new Dictionary<string, string>
+                {
+                    ["row"] = row.Name,
+                    ["rowThickness"] = rowThickness,
+                    ["refusal"] = "pairNotAllowed",
+                    ["requirement"] = refusing.Label,
+                    ["grade"] = row.Grade,
+                    ["builtThickness"] = refusing.Allowance.ThicknessText,
+                    ["allowedPairs"] = refusing.Allowance.PairsText,
+                },
+            };
+        }
 
-        var allowance = refusing.Allowance;
-        return allowance.MatchesThickness(row.Thickness)
-            ? $"{refusing.Label} does not allow grade '{row.Grade}' at {allowance.ThicknessText} in " +
-              $"(allowed: {allowance.GradesText})."
-            : $"{refusing.Label}'s features were built at {allowance.ThicknessText} in. Re-apply them with their tool " +
-              $"at {ThicknessMatchRule.Format(row.Thickness)} in before setting the sheet to this row.";
+        // Allowed, but the features carry the built row's geometry. The NX check passes for this row, so this is where
+        // the user hears it. NeedsReapplyCode: row, rowThickness, requirement, builtThickness.
+        if (requirements.FirstOrDefault(r => !r.Allowance.MatchesBuiltThickness(row.Thickness)) is { } rebuild)
+        {
+            return new RuleOutcome(Id, RuleDecision.Warn, NeedsReapplyCode,
+                _text.RowNeedsReapply(row.Name, rebuild.Label, rebuild.Allowance.ThicknessText, rowThickness))
+            {
+                Args = new Dictionary<string, string>
+                {
+                    ["row"] = row.Name,
+                    ["rowThickness"] = rowThickness,
+                    ["requirement"] = rebuild.Label,
+                    ["builtThickness"] = rebuild.Allowance.ThicknessText,
+                },
+            };
+        }
+
+        return null;
     }
 }

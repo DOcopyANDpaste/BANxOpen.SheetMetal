@@ -10,17 +10,20 @@ public sealed class FileSystemBeadSpecSource : IBeadSpecSource
 {
     private readonly SheetMetalMaterialTable _table;
     private readonly ExcelBeadSpecParser _parser;
+    private readonly SheetMetalText? _text;
 
-    public FileSystemBeadSpecSource(SheetMetalMaterialTable table, ExcelBeadSpecParser parser)
+    /// <param name="text">Words the folder errors; <see cref="SheetMetalText.Default"/> when null. The parser words its own.</param>
+    public FileSystemBeadSpecSource(SheetMetalMaterialTable table, ExcelBeadSpecParser parser, SheetMetalText? text = null)
     {
         _table = table;
         _parser = parser;
+        _text = text;
     }
 
-    public IReadOnlyList<StandardInfo> ListStandards() => StandardFolderLayout.ListStandards(_table);
+    public IReadOnlyList<StandardInfo> ListStandards() => StandardFolderLayout.ListStandards(_table, _text);
 
     public string? FindWorkbook(StandardInfo standard, string beadSpecName) =>
-        StandardFolderLayout.FindBeadWorkbook(standard, beadSpecName);
+        StandardFolderLayout.FindBeadWorkbook(standard, beadSpecName, _text);
 
     public IReadOnlyList<string> ListWorkbooks(StandardInfo standard) =>
         StandardFolderLayout.ListBeadSpecWorkbooks(standard);

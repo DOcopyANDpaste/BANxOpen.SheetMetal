@@ -60,16 +60,7 @@ public sealed record BeadOnBody(
         _ => $"{SpecFamily[0].Thickness:0.####} - {SpecFamily[SpecFamily.Count - 1].Thickness:0.####}",
     };
 
-    /// <summary>Why an unstamped bead's SPEC is not known, as a clause ("its geometry …"); null when it is known or
-    /// the bead is stamped.</summary>
-    public string? UnidentifiedReason => Status switch
-    {
-        BeadSpecStatus.GeometryUnreadable => "its geometry could not be read",
-        // Named by workbook and SPEC: two workbooks of a Standard could carry the same SpecId.
-        BeadSpecStatus.Ambiguous => $"its geometry matches several SPECs ({string.Join(", ", Candidates.Select(c => $"{c.WorkbookName}/{c.SpecId}"))})",
-        BeadSpecStatus.Unmatched => "its geometry matches no SPEC in any Standard",
-        _ => null,
-    };
+    // Why an unstamped bead's SPEC is not known is user text: SheetMetalText.BeadUnidentifiedReason.
 }
 
 /// <summary>Which SPEC each bead on a body is built to: read off its stamp, or — for a bead with no stamp — identified

@@ -44,25 +44,24 @@ public static class SheetMetalPreferenceCheck
 
     /// <param name="bodyPhysicalMaterialName">The body's physical material, or null when it has none.</param>
     /// <param name="bodyThickness">In part units.</param>
+    /// <param name="text">Words the result; <see cref="SheetMetalText.Default"/> when null.</param>
     public static SheetMetalPreferenceCheckResult Evaluate(
-        string? bodyPhysicalMaterialName, double bodyThickness, SheetMetalPartPreference preference)
+        string? bodyPhysicalMaterialName, double bodyThickness, SheetMetalPartPreference preference, SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
+
         if (!preference.IsMaterialTableEntry || string.IsNullOrWhiteSpace(preference.MaterialName))
         {
             return new SheetMetalPreferenceCheckResult(
                 SheetMetalPreferenceStatus.MaterialNotSet,
-                preference.IsMaterialTableEntry
-                    ? "Sheet Metal Preferences have no material."
-                    : "Sheet Metal Preferences are not set to Material Table entry, so NX is not using a material from the " +
-                      "sheet metal material standards file.");
+                preference.IsMaterialTableEntry ? text.PreferencesHaveNoMaterial : text.PreferencesNotMaterialTable);
         }
 
         if (preference.Row is not { } row)
         {
             return new SheetMetalPreferenceCheckResult(
                 SheetMetalPreferenceStatus.MaterialNotInTable,
-                $"Sheet Metal Preferences have material '{preference.MaterialName}', which the sheet metal material " +
-                "standards file does not list.");
+                text.PreferenceMaterialNotInTable(preference.MaterialName!));
         }
 
         // net48's reference assemblies aren't nullable-annotated, so the explicit null check narrows the name.
@@ -72,16 +71,14 @@ public static class SheetMetalPreferenceCheck
         {
             return new SheetMetalPreferenceCheckResult(
                 SheetMetalPreferenceStatus.MaterialOutOfSync,
-                $"Sheet Metal Preferences have material '{row.Name}', made of '{row.PhysicalMaterialName}', but this " +
-                $"body's material is '{bodyPhysicalMaterialName}'.");
+                text.PreferenceMaterialOutOfSync(row.Name, row.PhysicalMaterialName, bodyPhysicalMaterialName));
         }
 
         if (!ThicknessMatchRule.Matches(bodyThickness, preference.Thickness))
         {
             return new SheetMetalPreferenceCheckResult(
                 SheetMetalPreferenceStatus.ThicknessMismatch,
-                $"This sheet metal is {ThicknessMatchRule.Format(bodyThickness)} thick, but Sheet Metal Preferences specify " +
-                $"{ThicknessMatchRule.Format(preference.Thickness)}. Correct the body's thickness or the preferences before validating a SPEC.");
+                text.PreferenceThicknessMismatch(ThicknessMatchRule.Format(bodyThickness), ThicknessMatchRule.Format(preference.Thickness)));
         }
 
         return SheetMetalPreferenceCheckResult.InSync;

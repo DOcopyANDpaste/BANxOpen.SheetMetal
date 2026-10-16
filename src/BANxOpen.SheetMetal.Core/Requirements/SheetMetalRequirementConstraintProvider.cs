@@ -10,8 +10,9 @@ namespace BANxOpen.SheetMetal.Requirements;
 ///
 /// Asked of a physical material, which is several standards-file rows (one per thickness and grade). A material is
 /// acceptable when at least one of its rows — under the chosen Standard — satisfies every requirement: the row gate
-/// (<see cref="SheetMetalRowGateRule"/>) then blocks the individual rows that do not, so the user can only land on
-/// a compliant one. A material with no row at all is left to <see cref="SheetMetalPreferenceConstraintProvider"/>,
+/// (<see cref="SheetMetalRowGateRule"/>) then judges the individual row picked. Both only warn — the assignment goes
+/// ahead, and the requirement check left failing in NX is the reminder to re-apply the features. Requirements that
+/// cannot be read still block, since nothing can be judged. A material with no row at all is left to <see cref="SheetMetalPreferenceConstraintProvider"/>,
 /// which refuses it with the clearer reason.
 ///
 /// Requirements are part-level (NX keeps one set of Sheet Metal Preferences per part), so they apply to the part's
@@ -20,19 +21,24 @@ public sealed class SheetMetalRequirementConstraintProvider : IFeatureMaterialCo
 {
     public const string ProviderDomainId = "SHEETMETAL.REQUIREMENT";
 
-    public const string NotAllowedCode = "MATERIAL_NOT_ALLOWED_BY_REQUIREMENT";
-    public const string UnreadableCode = "REQUIREMENTS_UNREADABLE";
+    // Kept as aliases of the codes' definitions.
+    public const string NotAllowedCode = SheetMetalCodes.MaterialNotAllowedByRequirement;
+    public const string UnreadableCode = BANxOpen.Foundation.Core.FoundationCodes.RequirementsUnreadable;
 
     private readonly ISheetMetalRequirementReader _requirements;
     private readonly ISheetMetalPreferenceReader _preferences;
     private readonly SheetMetalStandardSelection _selection;
+    private readonly SheetMetalText _text;
 
+    /// <param name="text">Words the violations; <see cref="SheetMetalText.Default"/> when null.</param>
     public SheetMetalRequirementConstraintProvider(
-        ISheetMetalRequirementReader requirements, ISheetMetalPreferenceReader preferences, SheetMetalStandardSelection selection)
+        ISheetMetalRequirementReader requirements, ISheetMetalPreferenceReader preferences, SheetMetalStandardSelection selection,
+        SheetMetalText? text = null)
     {
         _requirements = requirements;
         _preferences = preferences;
         _selection = selection;
+        _text = text ?? SheetMetalText.Default;
     }
 
     public string DomainId => ProviderDomainId;
@@ -49,16 +55,21 @@ public sealed class SheetMetalRequirementConstraintProvider : IFeatureMaterialCo
             return new[]
             {
                 new MaterialConstraint(
-                    DomainId, "this part's sheet metal requirements", UnreadableCode,
+                    DomainId, _text.SourcePartRequirements, UnreadableCode,
                     _ => false,
-                    _ => $"This part's sheet metal requirements could not be read, so no material can be checked against " +
-                         $"them: {string.Join(" ", errors)}"),
+                    _ => _text.RequirementsUnreadableForAssignment(string.Join(" ", errors)))
+                {
+                    ViolationArgs = _ => new Dictionary<string, string> { ["error"] = string.Join(" ", errors) },
+                },
             };
         }
 
         return requirements.Select(ConstraintFor).ToList();
     }
 
+    /// <summary>Warns, never blocks: a material the beads do not allow is still the user's to assign. The assignment
+    /// keeps the requirement as it is, so its NX check fails and keeps saying the beads need re-applying after this
+    /// dialog has closed.</summary>
     private MaterialConstraint ConstraintFor(SheetMetalRequirement requirement) =>
         new(
             DomainId,
@@ -66,19 +77,19 @@ public sealed class SheetMetalRequirementConstraintProvider : IFeatureMaterialCo
             NotAllowedCode,
             candidate => _selection.RowsFor(candidate.Name) is var rows
                          && (rows.Count == 0 || rows.Any(row => requirement.Allowance.IsSatisfiedBy(row.Thickness, row.Grade))),
-            candidate => Describe(requirement, _selection.RowsFor(candidate.Name), candidate.Name));
+            candidate => _text.RequirementMaterialNotAllowed(candidate.Name, requirement.Label, requirement.Allowance.PairsText),
+            ConstraintSeverity.Warn)
+        {
+            ViolationArgs = candidate => ArgsFor(requirement, _selection.RowsFor(candidate.Name)),
+        };
 
-    private static string Describe(SheetMetalRequirement requirement, IReadOnlyList<SheetMetalMaterialRow> rows, string material)
-    {
-        var allowance = requirement.Allowance;
-        var atBuilt = rows.Where(r => allowance.MatchesThickness(r.Thickness)).ToList();
-
-        var why = atBuilt.Count == 0
-            ? $"has no row at {allowance.ThicknessText} in, the thickness its features were built at"
-            : $"is grade {string.Join("/", atBuilt.Select(r => r.Grade).Distinct(StringComparer.OrdinalIgnoreCase))} at " +
-              $"{allowance.ThicknessText} in, which it does not allow (allowed: {allowance.GradesText})";
-
-        return $"Material '{material}' {why}. To use another thickness, re-apply the features with their tool at the new " +
-               "thickness first.";
-    }
+    /// <summary>reason (thicknessNotAllowed | gradeNotAllowed), builtThickness, grades, allowedPairs.</summary>
+    private static IReadOnlyDictionary<string, string> ArgsFor(SheetMetalRequirement requirement, IReadOnlyList<SheetMetalMaterialRow> rows) =>
+        new Dictionary<string, string>
+        {
+            ["reason"] = rows.Any(r => requirement.Allowance.AllowsThickness(r.Thickness)) ? "gradeNotAllowed" : "thicknessNotAllowed",
+            ["builtThickness"] = requirement.Allowance.ThicknessText,
+            ["grades"] = string.Join("/", rows.Select(r => r.Grade).Distinct(StringComparer.OrdinalIgnoreCase)),
+            ["allowedPairs"] = requirement.Allowance.PairsText,
+        };
 }

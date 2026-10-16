@@ -10,6 +10,11 @@ public sealed class ThicknessMatchRule : IGateRule<BeadValidationContext, RuleOu
 {
     public const double ToleranceInches = 0.0005;
 
+    private readonly SheetMetalText _text;
+
+    /// <param name="text">Words the outcome; <see cref="SheetMetalText.Default"/> when null.</param>
+    public ThicknessMatchRule(SheetMetalText? text = null) => _text = text ?? SheetMetalText.Default;
+
     /// <summary>The one thickness comparison: SPEC validation, allowed grades and the preferences check all use it.</summary>
     public static bool Matches(double a, double b) => Math.Abs(a - b) <= ToleranceInches;
 
@@ -25,11 +30,20 @@ public sealed class ThicknessMatchRule : IGateRule<BeadValidationContext, RuleOu
         if (Matches(context.Profile.Thickness, context.Candidate.Thickness))
             return new RuleOutcome(RuleId, RuleDecision.Allow, null, null);
 
+        var specThickness = Format(context.Candidate.Thickness);
+        var sheetThickness = Format(context.Profile.Thickness);
         return new RuleOutcome(
             RuleId,
             RuleDecision.Block,
-            "THICKNESS_MISMATCH",
-            $"SPEC '{context.Candidate.SpecId}' is driven for {Format(context.Candidate.Thickness)} in material, " +
-            $"but this sheet metal is {Format(context.Profile.Thickness)} in.");
+            SheetMetalCodes.ThicknessMismatch,
+            _text.BeadThicknessMismatch(context.Candidate.SpecId, specThickness, sheetThickness))
+        {
+            Args = new Dictionary<string, string>
+            {
+                ["spec"] = context.Candidate.SpecId,
+                ["specThickness"] = specThickness,
+                ["sheetThickness"] = sheetThickness,
+            },
+        };
     }
 }

@@ -26,6 +26,11 @@ public sealed class ExcelBeadSpecParser
     private static readonly string[] DieRadiusAliases = { "RADP" };
     private static readonly string[] ThicknessAliases = { "THICKNESS", "TICHKNESS" };
 
+    private readonly SheetMetalText _text;
+
+    /// <param name="text">Words the errors, which the bead dialog shows; <see cref="SheetMetalText.Default"/> when null.</param>
+    public ExcelBeadSpecParser(SheetMetalText? text = null) => _text = text ?? SheetMetalText.Default;
+
     /// <param name="workbookName">Tagged onto every row as <see cref="BeadSpecRow.WorkbookName"/>, so a row still
     /// says which of a Standard's bead SPEC workbooks it came from once rows from several are in one list.</param>
     public IReadOnlyList<BeadSpecRow> Parse(string standardId, string workbookName, Stream workbookStream)
@@ -36,7 +41,7 @@ public sealed class ExcelBeadSpecParser
         var header = sheet[headerRow];
         var lastColumn = header.Where(kv => kv.Value.Length > 0).Select(kv => kv.Key).DefaultIfEmpty(0).Max();
         if (lastColumn == 0)
-            throw new InvalidDataException("SPEC workbook header row has no columns.");
+            throw new InvalidDataException(_text.WorkbookHeaderRowEmpty);
 
         var columnsByAlias = new Dictionary<string, int>();
         for (var col = 1; col <= lastColumn; col++)
@@ -91,7 +96,7 @@ public sealed class ExcelBeadSpecParser
 
     /// <summary>The first worksheet (in the workbook's own tab order) as row number → column number → cell text.
     /// Empty cells are simply absent.</summary>
-    private static SortedDictionary<int, Dictionary<int, string>> ReadFirstSheet(Stream workbookStream)
+    private SortedDictionary<int, Dictionary<int, string>> ReadFirstSheet(Stream workbookStream)
     {
         SpreadsheetDocument document;
         try
@@ -100,15 +105,15 @@ public sealed class ExcelBeadSpecParser
         }
         catch (OpenXmlPackageException ex)
         {
-            throw new InvalidDataException($"Not a readable .xlsx workbook: {ex.Message}", ex);
+            throw new InvalidDataException(_text.WorkbookUnreadable(ex.Message), ex);
         }
 
         using (document)
         {
             var workbookPart = document.WorkbookPart
-                ?? throw new InvalidDataException("The workbook has no workbook part.");
+                ?? throw new InvalidDataException(_text.WorkbookNoWorkbookPart);
             var firstSheet = workbookPart.Workbook.Sheets?.Elements<Sheet>().FirstOrDefault()
-                ?? throw new InvalidDataException("The workbook has no worksheets.");
+                ?? throw new InvalidDataException(_text.WorkbookNoWorksheets);
             var worksheetPart = (WorksheetPart)workbookPart.GetPartById(firstSheet.Id!.Value!);
 
             var sharedStrings = workbookPart.SharedStringTablePart?.SharedStringTable?
@@ -186,14 +191,13 @@ public sealed class ExcelBeadSpecParser
     private static string Text(IReadOnlyDictionary<int, string> cells, int column) =>
         cells.TryGetValue(column, out var text) ? text : "";
 
-    private static double Number(IReadOnlyDictionary<int, string> cells, int column, int rowNumber)
+    private double Number(IReadOnlyDictionary<int, string> cells, int column, int rowNumber)
     {
         var text = Text(cells, column).Trim();
         if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
             return value;
 
-        throw new InvalidDataException(
-            $"SPEC workbook cell {ColumnName(column)}{rowNumber} should be a number but reads '{text}'.");
+        throw new InvalidDataException(_text.WorkbookCellNotANumber($"{ColumnName(column)}{rowNumber}", text));
     }
 
     private static string ColumnName(int column)
@@ -204,7 +208,7 @@ public sealed class ExcelBeadSpecParser
         return name;
     }
 
-    private static int FindHeaderRow(SortedDictionary<int, Dictionary<int, string>> sheet)
+    private int FindHeaderRow(SortedDictionary<int, Dictionary<int, string>> sheet)
     {
         // KeyValuePair has no Deconstruct on net48.
         foreach (var row in sheet)
@@ -213,10 +217,10 @@ public sealed class ExcelBeadSpecParser
                 return row.Key;
         }
 
-        throw new InvalidDataException("Could not find the header row (a cell reading 'SPEC') in the workbook.");
+        throw new InvalidDataException(_text.WorkbookNoHeaderRow);
     }
 
-    private static int RequireColumn(IReadOnlyDictionary<string, int> columnsByAlias, string[] aliases, string displayName)
+    private int RequireColumn(IReadOnlyDictionary<string, int> columnsByAlias, string[] aliases, string displayName)
     {
         foreach (var alias in aliases)
         {
@@ -224,8 +228,7 @@ public sealed class ExcelBeadSpecParser
                 return column;
         }
 
-        throw new InvalidDataException(
-            $"SPEC workbook is missing the '{displayName}' column (looked for header text matching: {string.Join(", ", aliases)}).");
+        throw new InvalidDataException(_text.WorkbookColumnMissing(displayName, aliases));
     }
 
     private static bool IsYes(string cellText) =>

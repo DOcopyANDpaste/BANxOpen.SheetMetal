@@ -37,11 +37,13 @@ public static class SheetMetalMaterialTableParser
 
     /// <exception cref="InvalidDataException">The content is not a valid ENGLISH standards file. The message names the
     /// line at fault.</exception>
-    public static IReadOnlyList<SheetMetalMaterialRow> Parse(byte[] content) => Parse(Decode(content));
+    /// <param name="text">Words the errors; <see cref="SheetMetalText.Default"/> when null.</param>
+    public static IReadOnlyList<SheetMetalMaterialRow> Parse(byte[] content, SheetMetalText? text = null) => Parse(Decode(content), text);
 
     /// <inheritdoc cref="Parse(byte[])"/>
-    public static IReadOnlyList<SheetMetalMaterialRow> Parse(string content)
+    public static IReadOnlyList<SheetMetalMaterialRow> Parse(string content, SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
         var lines = content.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
 
         string? units = null;
@@ -60,35 +62,33 @@ public static class SheetMetalMaterialTableParser
         }
 
         if (index == lines.Length)
-            throw new InvalidDataException($"no {TableStart} block was found.");
+            throw new InvalidDataException(text.TableNoBlock(TableStart));
 
         if (units is null)
-            throw new InvalidDataException(
-                $"no {UnitsKeyword} line was found before {TableStart} (line {index + 1}). Add '{UnitsKeyword},{SupportedUnits}'.");
+            throw new InvalidDataException(text.TableNoUnits(UnitsKeyword, TableStart, index + 1, SupportedUnits));
 
         if (!Is(units, SupportedUnits))
-            throw new InvalidDataException(
-                $"{UnitsKeyword} is '{units}', but only {SupportedUnits} is supported: bead SPECs and thickness checks are in inches.");
+            throw new InvalidDataException(text.TableUnitsUnsupported(UnitsKeyword, units, SupportedUnits));
 
-        return ReadTable(lines, index + 1);
+        return ReadTable(lines, index + 1, text);
     }
 
-    private static IReadOnlyList<SheetMetalMaterialRow> ReadTable(string[] lines, int index)
+    private static IReadOnlyList<SheetMetalMaterialRow> ReadTable(string[] lines, int index, SheetMetalText text)
     {
         // VERSION, header row, property row — in that order, skipping comments and blank lines between them.
-        index = NextContentLine(lines, index, "the header row");
+        index = NextContentLine(lines, index, text.TableExpectedHeaderRow, text);
         if (Is(SplitKeywordLine(lines[index])[0], VersionKeyword))
-            index = NextContentLine(lines, index + 1, "the header row");
+            index = NextContentLine(lines, index + 1, text.TableExpectedHeaderRow, text);
 
         var headerLine = index;
         var delimiter = lines[headerLine].Contains(',') ? ',' : '\t';
         var headers = TrimTrailingEmpty(SplitCells(lines[headerLine], delimiter));
 
-        index = NextContentLine(lines, index + 1, "the column property row (unique/show/hide/attribute)");
+        index = NextContentLine(lines, index + 1, text.TableExpectedPropertyRow, text);
         var propertyLine = index;
         var properties = TrimTrailingEmpty(SplitCells(lines[propertyLine], delimiter));
 
-        var uniqueColumn = ValidateColumns(headers, properties, headerLine + 1, propertyLine + 1);
+        var uniqueColumn = ValidateColumns(headers, properties, headerLine + 1, propertyLine + 1, text);
 
         var rows = new List<SheetMetalMaterialRow>();
         var names = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -105,61 +105,56 @@ public static class SheetMetalMaterialTableParser
                 return rows;
 
             if (cells.Count > headers.Count)
-                throw new InvalidDataException(
-                    $"line {lineNumber} has {cells.Count} values but the header row (line {headerLine + 1}) has {headers.Count} columns.");
+                throw new InvalidDataException(text.TableRowWidth(lineNumber, cells.Count, headerLine + 1, headers.Count));
 
-            var row = ReadRow(headers, cells, uniqueColumn, lineNumber);
+            var row = ReadRow(headers, cells, uniqueColumn, lineNumber, text);
 
             if (names.TryGetValue(row.Name, out var firstLine))
-                throw new InvalidDataException(
-                    $"line {lineNumber}: '{row.Name}' is already used on line {firstLine}. Values in the unique column '{headers[uniqueColumn]}' must not repeat.");
+                throw new InvalidDataException(text.TableDuplicateName(lineNumber, row.Name, firstLine, headers[uniqueColumn]));
 
             names[row.Name] = lineNumber;
             rows.Add(row);
         }
 
-        throw new InvalidDataException($"the {TableStart} block has no {TableEnd} line.");
+        throw new InvalidDataException(text.TableNoEnd(TableStart, TableEnd));
     }
 
-    private static int ValidateColumns(List<string> headers, List<string> properties, int headerLine, int propertyLine)
+    private static int ValidateColumns(List<string> headers, List<string> properties, int headerLine, int propertyLine, SheetMetalText text)
     {
         if (headers.Count == 0)
-            throw new InvalidDataException($"line {headerLine}: the header row is empty.");
+            throw new InvalidDataException(text.TableHeaderEmpty(headerLine));
 
         var blank = headers.FindIndex(h => h.Length == 0);
         if (blank >= 0)
-            throw new InvalidDataException($"line {headerLine}: column {blank + 1} has no name.");
+            throw new InvalidDataException(text.TableColumnUnnamed(headerLine, blank + 1));
 
         var duplicate = headers.GroupBy(h => h, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
         if (duplicate is not null)
-            throw new InvalidDataException($"line {headerLine}: column '{duplicate.Key}' appears more than once.");
+            throw new InvalidDataException(text.TableColumnRepeated(headerLine, duplicate.Key));
 
         if (properties.Count != headers.Count)
-            throw new InvalidDataException(
-                $"line {propertyLine}: the property row has {properties.Count} values but the header row has {headers.Count} columns.");
+            throw new InvalidDataException(text.TablePropertyRowWidth(propertyLine, properties.Count, headers.Count));
 
         for (var i = 0; i < properties.Count; i++)
         {
             if (!KnownProperties.Any(p => Is(properties[i], p)))
-                throw new InvalidDataException(
-                    $"line {propertyLine}: column '{headers[i]}' has property '{properties[i]}'. Expected one of: {string.Join(", ", KnownProperties)}.");
+                throw new InvalidDataException(text.TablePropertyUnknown(propertyLine, headers[i], properties[i], KnownProperties));
         }
 
         var unique = Enumerable.Range(0, properties.Count).Where(i => Is(properties[i], UniqueProperty)).ToList();
         if (unique.Count != 1)
-            throw new InvalidDataException(
-                $"line {propertyLine}: exactly one column must be '{UniqueProperty}', but {unique.Count} are.");
+            throw new InvalidDataException(text.TableUniqueCount(propertyLine, UniqueProperty, unique.Count));
 
         var missing = SheetMetalMaterialColumns.Required
             .Where(required => !headers.Any(h => Is(h, required)))
             .ToList();
         if (missing.Count > 0)
-            throw new InvalidDataException($"line {headerLine}: required column(s) missing: {string.Join(", ", missing)}.");
+            throw new InvalidDataException(text.TableColumnsMissing(headerLine, missing));
 
         return unique[0];
     }
 
-    private static SheetMetalMaterialRow ReadRow(List<string> headers, List<string> cells, int uniqueColumn, int lineNumber)
+    private static SheetMetalMaterialRow ReadRow(List<string> headers, List<string> cells, int uniqueColumn, int lineNumber, SheetMetalText text)
     {
         var columns = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < headers.Count; i++)
@@ -167,18 +162,17 @@ public static class SheetMetalMaterialTableParser
 
         var name = columns[headers[uniqueColumn]];
         if (name.Length == 0)
-            throw new InvalidDataException($"line {lineNumber}: the unique column '{headers[uniqueColumn]}' is empty.");
+            throw new InvalidDataException(text.TableUniqueEmpty(lineNumber, headers[uniqueColumn]));
 
         foreach (var required in SheetMetalMaterialColumns.Required)
         {
             if (columns[required].Length == 0)
-                throw new InvalidDataException($"line {lineNumber} ('{name}'): {required} is empty.");
+                throw new InvalidDataException(text.TableValueEmpty(lineNumber, name, required));
         }
 
         var thicknessText = columns[SheetMetalMaterialColumns.Thickness];
         if (!double.TryParse(thicknessText, NumberStyles.Float, CultureInfo.InvariantCulture, out var thickness) || !(thickness > 0))
-            throw new InvalidDataException(
-                $"line {lineNumber} ('{name}'): {SheetMetalMaterialColumns.Thickness} '{thicknessText}' is not a positive number.");
+            throw new InvalidDataException(text.TableThicknessInvalid(lineNumber, name, SheetMetalMaterialColumns.Thickness, thicknessText));
 
         return new SheetMetalMaterialRow(
             name,
@@ -215,7 +209,7 @@ public static class SheetMetalMaterialTableParser
         }
     }
 
-    private static int NextContentLine(string[] lines, int index, string expected)
+    private static int NextContentLine(string[] lines, int index, string expected, SheetMetalText text)
     {
         for (; index < lines.Length; index++)
         {
@@ -223,7 +217,7 @@ public static class SheetMetalMaterialTableParser
                 return index;
         }
 
-        throw new InvalidDataException($"the {TableStart} block ends before {expected}.");
+        throw new InvalidDataException(text.TableEndsBefore(TableStart, expected));
     }
 
     private static bool IsSkippable(string line)

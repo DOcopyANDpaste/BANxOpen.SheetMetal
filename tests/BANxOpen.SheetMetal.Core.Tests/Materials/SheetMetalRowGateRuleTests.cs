@@ -74,6 +74,26 @@ public class SheetMetalRowGateRuleTests
     }
 
     [Fact]
+    public void A_thickness_mismatch_carries_the_row_and_both_thicknesses_for_the_front_end_to_word()
+    {
+        var outcome = Pick("Aluminum 2024-O", "2024-O_0.032");
+
+        Assert.Equal("2024-O_0.032", outcome.Args["row"]);
+        Assert.Contains("0.032", outcome.Args["rowThickness"]);
+        Assert.Contains("0.02", outcome.Args["bodyThickness"]);
+    }
+
+    [Fact]
+    public void A_row_not_offered_carries_the_row_material_and_standard()
+    {
+        var outcome = Pick("Aluminum 2024-O", "5052-O_0.020");
+
+        Assert.Equal("5052-O_0.020", outcome.Args["row"]);
+        Assert.Equal("Aluminum 2024-O", outcome.Args["material"]);
+        Assert.Equal("XX_Standard", outcome.Args["standard"]);
+    }
+
+    [Fact]
     public void An_unreadable_body_thickness_confirms_nothing()
     {
         // Nothing is known to disagree with.

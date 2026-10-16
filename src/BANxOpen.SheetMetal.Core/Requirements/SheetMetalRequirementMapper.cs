@@ -1,6 +1,6 @@
+using System.Globalization;
 using BANxOpen.Foundation.Contracts.Requirements;
 using BANxOpen.Foundation.Core.Requirements;
-using BANxOpen.SheetMetal.Beads.Rules;
 
 namespace BANxOpen.SheetMetal.Requirements;
 
@@ -8,7 +8,7 @@ namespace BANxOpen.SheetMetal.Requirements;
 public static class SheetMetalRequirementNames
 {
     /// <summary>The expression NX creates with the Sheet Metal Preferences' material assignment, holding the sheet
-    /// thickness. Read by name: the THICKNESS requirement is checked against it.</summary>
+    /// thickness (in inches: parts are inch). Read by name: the pair expression is built on it.</summary>
     public const string ThicknessExpression = "Sheet_Metal_Material_Thickness";
 
     /// <summary>The part attribute NX writes when the preferences select a standards-file row: the standards file
@@ -21,24 +21,33 @@ public static class SheetMetalRequirementNames
 
     public static string GradeExpressionFormula => $"ug_askPartAttrValue(\"{GradeAttribute}\")";
 
-    public const string GradeAspect = "GRADE";
-    public const string ThicknessAspect = "THICKNESS";
+    /// <summary>A string expression holding the sheet's grade and thickness as one value, "2024-O@0.0400" — the form
+    /// <see cref="MaterialThicknessPair.Key"/> writes — so one check judges the pair.</summary>
+    public const string PairExpression = "BA_SM_MatThk";
+
+    public static string PairExpressionFormula =>
+        $"{GradeExpression} + \"{MaterialThicknessPair.Separator}\" + format(\"%.4f\", {ThicknessExpression})";
+
+    public const string PairAspect = "PAIR";
+
+    /// <summary>The two aspects a requirement was held in before <see cref="PairAspect"/>. Only read, so a part written
+    /// then is carried over; its next refresh replaces them with the pair.</summary>
+    public const string LegacyGradeAspect = "GRADE";
+    public const string LegacyThicknessAspect = "THICKNESS";
 }
 
-/// <summary>Turns a <see cref="SheetMetalRequirement"/> into the two Foundation <see cref="RequirementSpec"/>s it is
-/// held in the part as, and back:
-/// <list type="bullet">
-/// <item>GRADE — a String "set of values" requirement listing the allowed grades, checked against
-/// <see cref="SheetMetalRequirementNames.GradeExpression"/>.</item>
-/// <item>THICKNESS — a Number "equals" requirement holding the built thickness within
-/// <see cref="ThicknessMatchRule.ToleranceInches"/>, checked against
-/// <see cref="SheetMetalRequirementNames.ThicknessExpression"/>.</item>
-/// </list>
-/// Two native requirements rather than one combined formula: each is a plain NX definition method, so NX reports which
-/// of the two failed, and the allowed grades sit in the requirement itself where a user can read them.</summary>
+/// <summary>Turns a <see cref="SheetMetalRequirement"/> into the one Foundation <see cref="RequirementSpec"/> it is
+/// held in the part as, and back: a String "set of values" requirement listing every allowed
+/// <see cref="MaterialThicknessPair.Key"/>, checked against <see cref="SheetMetalRequirementNames.PairExpression"/>.
+///
+/// One check per SPEC, so NX judges the grade and thickness together rather than each on its own. Severity Error: a
+/// sheet the SPEC does not allow stays wrong until the features are re-applied, and the failing check is what keeps
+/// reminding the user after the tool that changed the sheet has closed.</summary>
 public static class SheetMetalRequirementMapper
 {
     private const string SourcePrefix = "Source: ";
+    private const string BuiltAtPrefix = "Built at: ";
+    private const string BuiltAtSuffix = " in";
 
     public static IReadOnlyList<RequirementSpec> ToSpecs(SheetMetalRequirement requirement)
     {
@@ -49,7 +58,7 @@ public static class SheetMetalRequirementMapper
             : $"Used by: {string.Join(", ", requirement.Users.Select(u => u.Label))}";
         var sourceLine = $"{SourcePrefix}{(string.IsNullOrEmpty(requirement.Source) ? "unknown" : requirement.Source)}";
 
-        // The NX name is the SPEC alone (BA_REQ_BEAD_B1005010_3_GRADE): the Standard and domain made it too long to
+        // The NX name is the SPEC alone (BA_REQ_BEAD_B1005010_3_PAIR): the Standard and domain made it too long to
         // read in the Part Navigator, and the full identity is kept in the description's bookkeeping line regardless.
         var nameStem = $"{NameAliasFor(requirement.Domain)}_{requirement.SpecId}";
 
@@ -58,33 +67,16 @@ public static class SheetMetalRequirementMapper
             new RequirementSpec(
                 requirement.Domain,
                 requirement.Key,
-                SheetMetalRequirementNames.GradeAspect,
+                SheetMetalRequirementNames.PairAspect,
                 RequirementValueType.String,
-                new SetOfValuesRule(allowance.Grades),
-                RequirementSeverity.Warning,
-                SheetMetalRequirementNames.GradeExpression,
+                new SetOfValuesRule(allowance.Pairs.Select(p => p.Key).ToList()),
+                RequirementSeverity.Error,
+                SheetMetalRequirementNames.PairExpression,
                 new[]
                 {
-                    $"{requirement.Label}: the sheet metal grade must be one of {allowance.GradesText} " +
-                    $"(allowed at {allowance.ThicknessText} in, the thickness it was built at).",
-                    "If this fails, re-check the features below against the new Sheet Metal Preferences.",
-                    usersLine,
-                    sourceLine,
-                },
-                users,
-                nameStem),
-            new RequirementSpec(
-                requirement.Domain,
-                requirement.Key,
-                SheetMetalRequirementNames.ThicknessAspect,
-                RequirementValueType.Number,
-                new EqualsValueRule(allowance.BuiltThickness, ThicknessMatchRule.ToleranceInches),
-                RequirementSeverity.Warning,
-                SheetMetalRequirementNames.ThicknessExpression,
-                new[]
-                {
-                    $"{requirement.Label} was built at {allowance.ThicknessText} in; its features carry that row's values.",
-                    "If this fails, the sheet thickness changed: re-apply the features below so they take the new thickness's row.",
+                    $"{requirement.Label}: the sheet metal material must be one of {allowance.PairsText}.",
+                    "If this fails, re-apply the features below with their tool for the new Sheet Metal Preferences.",
+                    $"{BuiltAtPrefix}{allowance.ThicknessText}{BuiltAtSuffix}",
                     usersLine,
                     sourceLine,
                 },
@@ -100,47 +92,64 @@ public static class SheetMetalRequirementMapper
         return dot >= 0 ? domain.Substring(dot + 1) : domain;
     }
 
-    /// <summary>The requirements held in the part for one domain. A key with only one of its two aspects, or with a
-    /// value that is not what this mapper writes, is reported in the errors rather than skipped — a caller would
-    /// otherwise treat a half-read requirement as no requirement.</summary>
+    /// <summary>The requirements held in the part for one domain. A key whose value is not what this mapper writes is
+    /// reported in the errors rather than skipped — a caller would otherwise treat a half-read requirement as no
+    /// requirement. A key still held as the legacy GRADE + THICKNESS aspects reads as those grades at that
+    /// thickness.</summary>
+    /// <param name="text">Words the read errors; <see cref="SheetMetalText.Default"/> when null.</param>
     public static (IReadOnlyList<SheetMetalRequirement> Requirements, IReadOnlyList<string> Errors) FromRead(
-        RequirementRead read, string featureNoun)
+        RequirementRead read, string featureNoun, SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
         var requirements = new List<SheetMetalRequirement>();
         var errors = new List<string>(read.Errors);
 
         foreach (var group in read.Requirements.GroupBy(r => (r.Spec.Domain, r.Spec.Key)))
         {
-            var grade = group.FirstOrDefault(r => r.Spec.Aspect == SheetMetalRequirementNames.GradeAspect)?.Spec;
-            var thickness = group.FirstOrDefault(r => r.Spec.Aspect == SheetMetalRequirementNames.ThicknessAspect)?.Spec;
-
             if (!TrySplitKey(group.Key.Key, out var standardId, out var specId))
             {
-                errors.Add($"Requirement key '{group.Key.Key}' is not a Standard|SPEC pair.");
+                errors.Add(text.RequirementKeyMalformed(group.Key.Key));
                 continue;
             }
 
-            if (grade?.Rule is not SetOfValuesRule grades || thickness?.Rule is not EqualsValueRule built)
+            var specs = group.Select(r => r.Spec).ToList();
+            if (AllowanceOf(specs) is not { } allowance)
             {
-                errors.Add($"The requirement for {featureNoun} {specId} (Standard {standardId}) is incomplete or was " +
-                           "edited by hand; re-apply its features to rewrite it.");
+                errors.Add(text.RequirementIncomplete(featureNoun, specId, standardId));
                 continue;
             }
 
-            var users = grade.AssociatedObjectKeys
-                .Concat(thickness.AssociatedObjectKeys)
+            var users = specs
+                .SelectMany(s => s.AssociatedObjectKeys)
                 .Distinct(StringComparer.Ordinal)
                 .Select(key => new RequirementUser(key, key))
                 .ToList();
 
             requirements.Add(new SheetMetalRequirement(
-                group.Key.Domain, featureNoun, standardId, specId,
-                new SheetMetalAllowance(built.Value, grades.Values),
-                users,
-                SourceOf(grade.Description) ?? SourceOf(thickness.Description) ?? string.Empty));
+                group.Key.Domain, featureNoun, standardId, specId, allowance, users,
+                specs.Select(s => SourceOf(s.Description)).FirstOrDefault(s => s is not null) ?? string.Empty));
         }
 
         return (requirements, errors);
+    }
+
+    /// <summary>The allowance one key's specs hold, or null when they are not what this mapper writes (or wrote).</summary>
+    private static SheetMetalAllowance? AllowanceOf(IReadOnlyList<RequirementSpec> specs)
+    {
+        if (specs.FirstOrDefault(s => s.Aspect == SheetMetalRequirementNames.PairAspect) is { } pair)
+        {
+            if (pair.Rule is not SetOfValuesRule values || BuiltAtOf(pair.Description) is not { } built)
+                return null;
+
+            var pairs = values.Values.Select(MaterialThicknessPair.ParseKey).ToList();
+            return pairs.Any(p => p is null) ? null : new SheetMetalAllowance(built, pairs.Select(p => p!).ToList());
+        }
+
+        var grade = specs.FirstOrDefault(s => s.Aspect == SheetMetalRequirementNames.LegacyGradeAspect);
+        var thickness = specs.FirstOrDefault(s => s.Aspect == SheetMetalRequirementNames.LegacyThicknessAspect);
+        return grade?.Rule is SetOfValuesRule grades && thickness?.Rule is EqualsValueRule builtAt
+            ? SheetMetalAllowance.AtBuiltThickness(builtAt.Value, grades.Values)
+            : null;
     }
 
     private static bool TrySplitKey(string key, out string standardId, out string specId)
@@ -150,6 +159,15 @@ public static class SheetMetalRequirementMapper
         specId = bar > 0 ? key.Substring(bar + 1) : string.Empty;
         return bar > 0 && specId.Length > 0;
     }
+
+    private static double? BuiltAtOf(IReadOnlyList<string> description) =>
+        description.FirstOrDefault(l => l.StartsWith(BuiltAtPrefix, StringComparison.Ordinal)) is { } line
+        && line.EndsWith(BuiltAtSuffix, StringComparison.Ordinal)
+        && double.TryParse(
+            line.Substring(BuiltAtPrefix.Length, line.Length - BuiltAtPrefix.Length - BuiltAtSuffix.Length),
+            NumberStyles.Float, CultureInfo.InvariantCulture, out var built)
+            ? built
+            : null;
 
     private static string? SourceOf(IReadOnlyList<string> description) =>
         description.FirstOrDefault(l => l.StartsWith(SourcePrefix, StringComparison.Ordinal)) is { } line
@@ -170,12 +188,15 @@ public sealed class SheetMetalRequirementReader : ISheetMetalRequirementReader
 {
     private readonly IPartRequirementStore _store;
     private readonly IReadOnlyList<(string Domain, string FeatureNoun)> _domains;
+    private readonly SheetMetalText? _text;
 
+    /// <param name="text">Words the read errors; <see cref="SheetMetalText.Default"/> when null.</param>
     public SheetMetalRequirementReader(
-        IPartRequirementStore store, IReadOnlyList<(string Domain, string FeatureNoun)> domains)
+        IPartRequirementStore store, IReadOnlyList<(string Domain, string FeatureNoun)> domains, SheetMetalText? text = null)
     {
         _store = store;
         _domains = domains;
+        _text = text;
     }
 
     public (IReadOnlyList<SheetMetalRequirement> Requirements, IReadOnlyList<string> Errors) ReadAll()
@@ -185,7 +206,7 @@ public sealed class SheetMetalRequirementReader : ISheetMetalRequirementReader
 
         foreach (var (domain, noun) in _domains)
         {
-            var (read, readErrors) = SheetMetalRequirementMapper.FromRead(_store.Read(domain), noun);
+            var (read, readErrors) = SheetMetalRequirementMapper.FromRead(_store.Read(domain), noun, _text);
             requirements.AddRange(read);
             errors.AddRange(readErrors);
         }

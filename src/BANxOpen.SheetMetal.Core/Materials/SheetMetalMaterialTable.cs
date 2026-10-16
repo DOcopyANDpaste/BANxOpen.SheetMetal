@@ -28,18 +28,20 @@ public sealed class SheetMetalMaterialTable
 
     /// <exception cref="FileNotFoundException">No file at <paramref name="path"/>.</exception>
     /// <exception cref="InvalidDataException">The file is not a valid standards file; the message names the line.</exception>
-    public static SheetMetalMaterialTable Load(string path)
+    /// <param name="text">Words the errors shown at start-up; <see cref="SheetMetalText.Default"/> when null.</param>
+    public static SheetMetalMaterialTable Load(string path, SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
         if (!File.Exists(path))
-            throw new FileNotFoundException($"Sheet metal material standards file not found: {path}", path);
+            throw new FileNotFoundException(text.MaterialTableNotFound(path), path);
 
         try
         {
-            return new SheetMetalMaterialTable(path, SheetMetalMaterialTableParser.Parse(File.ReadAllBytes(path)));
+            return new SheetMetalMaterialTable(path, SheetMetalMaterialTableParser.Parse(File.ReadAllBytes(path), text));
         }
         catch (InvalidDataException ex)
         {
-            throw new InvalidDataException($"Sheet metal material standards file '{path}': {ex.Message}", ex);
+            throw new InvalidDataException(text.MaterialTableInvalid(path, ex.Message), ex);
         }
     }
 

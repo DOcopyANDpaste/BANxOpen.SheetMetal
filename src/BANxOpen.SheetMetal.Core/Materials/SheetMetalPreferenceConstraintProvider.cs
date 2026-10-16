@@ -24,20 +24,24 @@ public sealed class SheetMetalPreferenceConstraintProvider : IFeatureMaterialCon
 {
     public const string ProviderDomainId = "SHEETMETAL.PREFERENCES";
 
-    public const string PreferencesUnreadableCode = "SHEETMETAL_PREFERENCES_UNREADABLE";
-    public const string NotInTableCode = "PREFERENCE_MATERIAL_NOT_IN_TABLE";
-    public const string SharedByBodiesCode = "PREFERENCE_SHARED_BY_BODIES";
-
-    private const string SourceLabel = "Sheet Metal Preferences";
+    // Kept as aliases of SheetMetalCodes, which is where the codes are defined.
+    public const string PreferencesUnreadableCode = SheetMetalCodes.PreferencesUnreadable;
+    public const string NotInTableCode = SheetMetalCodes.PreferenceMaterialNotInTable;
+    public const string SharedByBodiesCode = SheetMetalCodes.PreferenceSharedByBodies;
 
     private readonly ISheetMetalPreferenceReader _reader;
     private readonly SheetMetalMaterialTable _table;
+    private readonly SheetMetalText _text;
 
-    public SheetMetalPreferenceConstraintProvider(ISheetMetalPreferenceReader reader, SheetMetalMaterialTable table)
+    /// <param name="text">Words the violations; <see cref="SheetMetalText.Default"/> when null.</param>
+    public SheetMetalPreferenceConstraintProvider(ISheetMetalPreferenceReader reader, SheetMetalMaterialTable table, SheetMetalText? text = null)
     {
         _reader = reader;
         _table = table;
+        _text = text ?? SheetMetalText.Default;
     }
+
+    private string SourceLabel => _text.SourcePreferences;
 
     public string DomainId => ProviderDomainId;
 
@@ -50,14 +54,16 @@ public sealed class SheetMetalPreferenceConstraintProvider : IFeatureMaterialCon
         if (read.Preference is not { } preference)
         {
             // Nothing about the preferences is known, so no material can be shown to be settable in them.
-            var error = read.ReadError ?? "no preferences were returned";
+            var error = read.ReadError ?? _text.NoPreferencesReturned;
             return new[]
             {
                 new MaterialConstraint(
                     DomainId, SourceLabel, PreferencesUnreadableCode,
                     _ => false,
-                    _ => $"This part's Sheet Metal Preferences could not be read, so they cannot be updated to match " +
-                         $"the assigned material: {error}"),
+                    _ => _text.PreferencesUnreadableForAssignment(error))
+                {
+                    ViolationArgs = _ => new Dictionary<string, string> { ["error"] = error },
+                },
             };
         }
 
@@ -66,10 +72,10 @@ public sealed class SheetMetalPreferenceConstraintProvider : IFeatureMaterialCon
             new(
                 DomainId, SourceLabel, NotInTableCode,
                 candidate => _table.FirstRowForPhysicalMaterial(candidate.Name) is not null,
-                candidate =>
-                    $"Material '{candidate.Name}' has no row in the sheet metal material standards file " +
-                    $"({SheetMetalMaterialColumns.PhysicalMaterialName} = '{candidate.Name}'), so Sheet Metal Preferences " +
-                    "cannot be updated to match it. Add a row for it before assigning."),
+                candidate => _text.PreferenceMaterialHasNoRow(candidate.Name, SheetMetalMaterialColumns.PhysicalMaterialName))
+            {
+                ViolationArgs = _ => new Dictionary<string, string> { ["column"] = SheetMetalMaterialColumns.PhysicalMaterialName },
+            },
         };
 
         if (preference.SheetMetalBodyCount > 1)
@@ -77,9 +83,11 @@ public sealed class SheetMetalPreferenceConstraintProvider : IFeatureMaterialCon
             constraints.Add(new MaterialConstraint(
                 DomainId, SourceLabel, SharedByBodiesCode,
                 _ => false,
-                _ => $"This part has {preference.SheetMetalBodyCount} sheet metal bodies. Sheet Metal Preferences " +
-                     "belong to the part, so this assignment sets the preferences' material for all of them.",
-                ConstraintSeverity.Warn));
+                _ => _text.PreferencesSharedByBodies(preference.SheetMetalBodyCount),
+                ConstraintSeverity.Warn)
+            {
+                ViolationArgs = _ => new Dictionary<string, string> { ["count"] = preference.SheetMetalBodyCount.ToString() },
+            });
         }
 
         return constraints;

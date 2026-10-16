@@ -42,13 +42,14 @@ public sealed class BeadSettings
 
     public static BeadSettings Default { get; } = new(DefaultGeometryMatchTolerance, DefaultParameterMapping);
 
-    public BeadSettings(double geometryMatchTolerance, IReadOnlyList<BeadParameterMapping> parameterMapping)
+    /// <param name="text">Words the errors shown at start-up; <see cref="SheetMetalText.Default"/> when null.</param>
+    public BeadSettings(double geometryMatchTolerance, IReadOnlyList<BeadParameterMapping> parameterMapping, SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
         if (!(geometryMatchTolerance > 0))
-            throw new ArgumentOutOfRangeException(nameof(geometryMatchTolerance), geometryMatchTolerance,
-                "geometryMatchTolerance must be greater than zero.");
+            throw new ArgumentOutOfRangeException(nameof(geometryMatchTolerance), geometryMatchTolerance, text.BeadToleranceNotPositive);
 
-        Validate(parameterMapping);
+        Validate(parameterMapping, text);
 
         GeometryMatchTolerance = geometryMatchTolerance;
         ParameterMapping = parameterMapping.ToList();
@@ -73,8 +74,10 @@ public sealed class BeadSettings
     /// section uses that section's default: these are tuning values with safe defaults, so an absent file
     /// should not stop either dialog opening. A file that is present but invalid is an error, since silently
     /// ignoring an edit someone made on purpose is worse than refusing to start.</summary>
-    public static BeadSettings Load(string path)
+    /// <param name="text">Words the errors shown at start-up; <see cref="SheetMetalText.Default"/> when null.</param>
+    public static BeadSettings Load(string path, SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
         if (!File.Exists(path))
             return Default;
 
@@ -87,54 +90,49 @@ public sealed class BeadSettings
         }
         catch (JsonException ex)
         {
-            throw new InvalidDataException($"Bead settings at '{path}' are not valid JSON: {ex.Message}", ex);
+            throw new InvalidDataException(text.BeadSettingsInvalidJson(path, ex.Message), ex);
         }
 
         if (file is null)
-            throw new InvalidDataException($"Bead settings at '{path}' are empty.");
+            throw new InvalidDataException(text.BeadSettingsEmpty(path));
 
         try
         {
             var mapping = file.ParameterMapping is null
                 ? DefaultParameterMapping
-                : file.ParameterMapping.Select(ParseEntry).ToList();
+                : file.ParameterMapping.Select(entry => ParseEntry(entry, text)).ToList();
 
-            return new BeadSettings(file.GeometryMatchTolerance ?? DefaultGeometryMatchTolerance, mapping);
+            return new BeadSettings(file.GeometryMatchTolerance ?? DefaultGeometryMatchTolerance, mapping, text);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidDataException)
         {
-            throw new InvalidDataException($"Bead settings at '{path}': {ex.Message}", ex);
+            throw new InvalidDataException(text.BeadSettingsInvalid(path, ex.Message), ex);
         }
     }
 
-    private static BeadParameterMapping ParseEntry(MappingEntry entry)
+    private static BeadParameterMapping ParseEntry(MappingEntry entry, SheetMetalText text)
     {
         if (!Enum.TryParse<BeadFeatureParameter>(entry.Feature ?? "", ignoreCase: true, out var feature))
-            throw new InvalidDataException(
-                $"parameterMapping feature '{entry.Feature}' is not a bead parameter. " +
-                $"Known: {string.Join(", ", Enum.GetNames(typeof(BeadFeatureParameter)))}.");
+            throw new InvalidDataException(text.MappingFeatureUnknown(entry.Feature, Enum.GetNames(typeof(BeadFeatureParameter))));
 
         return new BeadParameterMapping(feature, entry.SpecColumn ?? "");
     }
 
-    private static void Validate(IReadOnlyList<BeadParameterMapping> mapping)
+    private static void Validate(IReadOnlyList<BeadParameterMapping> mapping, SheetMetalText text)
     {
         foreach (var entry in mapping)
         {
             if (!BeadSpecColumns.IsKnown(entry.SpecColumn))
-                throw new ArgumentException(
-                    $"parameterMapping column '{entry.SpecColumn}' for {entry.Feature} is not a SPEC workbook column. " +
-                    $"Known: {string.Join(", ", BeadSpecColumns.All)}.");
+                throw new ArgumentException(text.MappingColumnUnknown(entry.SpecColumn, entry.Feature.ToString(), BeadSpecColumns.All));
         }
 
-        var duplicated = mapping.GroupBy(m => m.Feature).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        var duplicated = mapping.GroupBy(m => m.Feature).Where(g => g.Count() > 1).Select(g => g.Key.ToString()).ToList();
         if (duplicated.Count > 0)
-            throw new ArgumentException($"parameterMapping lists {string.Join(", ", duplicated)} more than once.");
+            throw new ArgumentException(text.MappingDuplicated(duplicated));
 
-        var missing = WrittenParameters.Where(p => mapping.All(m => m.Feature != p)).ToList();
+        var missing = WrittenParameters.Where(p => mapping.All(m => m.Feature != p)).Select(p => p.ToString()).ToList();
         if (missing.Count > 0)
-            throw new ArgumentException(
-                $"parameterMapping must map {string.Join(", ", missing)}: the tool writes it into every bead.");
+            throw new ArgumentException(text.MappingMissing(missing));
     }
 
     private sealed class SettingsFile

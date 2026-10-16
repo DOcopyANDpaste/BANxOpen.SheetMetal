@@ -18,11 +18,14 @@ public sealed class SheetMetalProfileReader
 {
     private readonly NxSessionContext _context;
     private readonly SheetMetalPreferenceService _preferences;
+    private readonly SheetMetalText _text;
 
-    public SheetMetalProfileReader(NxSessionContext context, SheetMetalPreferenceService preferences)
+    /// <param name="text">Words the failures a tool shows; <see cref="SheetMetalText.Default"/> when null.</param>
+    public SheetMetalProfileReader(NxSessionContext context, SheetMetalPreferenceService preferences, SheetMetalText? text = null)
     {
         _context = context;
         _preferences = preferences;
+        _text = text ?? SheetMetalText.Default;
     }
 
     public OperationResult<ProfileReadOutcome> ReadFor(Body body)
@@ -32,12 +35,12 @@ public sealed class SheetMetalProfileReader
         try
         {
             if (!sheetmetalManager.IsSheetmetalBody(body))
-                return OperationResult<ProfileReadOutcome>.Fail("NOT_SHEETMETAL", $"'{body.Name}' is not a sheet metal body.");
+                return OperationResult<ProfileReadOutcome>.Fail(SheetMetalCodes.NotSheetMetal, _text.ProfileNotSheetMetal(body.Name));
         }
         catch (NXException ex)
         {
             _context.Log.Error($"IsSheetmetalBody failed for '{body.Name}': NX {ex.ErrorCode}: {ex.Message}");
-            return OperationResult<ProfileReadOutcome>.Fail("NOT_SHEETMETAL", $"'{body.Name}' could not be checked as sheet metal.");
+            return OperationResult<ProfileReadOutcome>.Fail(SheetMetalCodes.NotSheetMetal, _text.ProfileNotCheckable(body.Name));
         }
 
         double thickness;
@@ -48,7 +51,7 @@ public sealed class SheetMetalProfileReader
         catch (NXException ex)
         {
             _context.Log.Error($"GetBodyThickness failed for '{body.Name}': NX {ex.ErrorCode}: {ex.Message}");
-            return OperationResult<ProfileReadOutcome>.Fail("THICKNESS_READ_FAILED", "Could not read this sheet metal's thickness.");
+            return OperationResult<ProfileReadOutcome>.Fail(SheetMetalCodes.ThicknessReadFailed, _text.ThicknessUnreadable);
         }
 
         // Part-level: the sheet metal check and thickness are already done above, so not ReadFor(body), which repeats them.
@@ -56,8 +59,8 @@ public sealed class SheetMetalProfileReader
         if (preferenceRead.Preference is not { } preference)
         {
             return OperationResult<ProfileReadOutcome>.Fail(
-                SheetMetalPreferenceConstraintProvider.PreferencesUnreadableCode,
-                $"Could not read this part's Sheet Metal Preferences: {preferenceRead.ReadError ?? "no preferences were returned"}.");
+                SheetMetalCodes.PreferencesUnreadable,
+                _text.ProfilePreferencesUnreadable(preferenceRead.ReadError ?? _text.NoPreferencesReturned));
         }
 
         string? materialName = null;

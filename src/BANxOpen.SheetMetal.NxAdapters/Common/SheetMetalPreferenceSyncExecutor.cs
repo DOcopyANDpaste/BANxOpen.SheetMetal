@@ -1,3 +1,4 @@
+using BANxOpen.Materials.Core;
 using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.Materials.Core.Assignment;
 using BANxOpen.Materials.NxAdapters;
@@ -15,7 +16,7 @@ namespace BANxOpen.SheetMetal.NxAdapters.Common;
 /// the part.</summary>
 public sealed class SheetMetalPreferenceSyncExecutor : ISideEffectExecutor
 {
-    public const string RowNotFoundCode = "PREFERENCE_MATERIAL_NOT_IN_TABLE";
+    public const string RowNotFoundCode = SheetMetalCodes.PreferenceMaterialNotInTable;
 
     private readonly SheetMetalPreferenceService _preferences;
     private readonly SheetMetalMaterialTable _table;
@@ -33,7 +34,7 @@ public sealed class SheetMetalPreferenceSyncExecutor : ISideEffectExecutor
         if (instruction.InstructionType != InstructionType)
         {
             return OperationResult.Fail(
-                "UNSUPPORTED_INSTRUCTION",
+                MaterialsCodes.UnsupportedInstruction,
                 $"{nameof(SheetMetalPreferenceSyncExecutor)} cannot execute instruction type '{instruction.InstructionType}'.");
         }
 
@@ -44,7 +45,7 @@ public sealed class SheetMetalPreferenceSyncExecutor : ISideEffectExecutor
             || string.IsNullOrWhiteSpace(materialName))
         {
             return OperationResult.Fail(
-                "MALFORMED_INSTRUCTION",
+                MaterialsCodes.MalformedInstruction,
                 $"'{SyncSheetMetalPreferenceEffectRule.MaterialNameDataKey}' is missing or not a non-empty string.");
         }
 
@@ -53,7 +54,7 @@ public sealed class SheetMetalPreferenceSyncExecutor : ISideEffectExecutor
         {
             return OperationResult.Fail(
                 RowNotFoundCode,
-                $"Material '{materialName}' is not in the sheet metal material standards file, so Sheet Metal Preferences cannot be set to it.");
+                SheetMetalText.Default.PreferenceRowNotInTable(materialName));
         }
 
         return _preferences.SyncMaterial(row);

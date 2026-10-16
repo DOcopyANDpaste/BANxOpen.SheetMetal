@@ -43,6 +43,20 @@ public class BeadProviderWithRequirementsTests
     }
 
     [Fact]
+    public void Drift_compares_every_pair_of_the_family_not_only_the_built_row()
+    {
+        var at40 = SpecRow("B1005010-2", 0.04, "2024-O", "5052-O");
+        var recorded = new FakeRequirementReader(Requirement("B1005010-2", 0.02, At20, at40));
+
+        Assert.DoesNotContain(Provider(recorded, At20, at40).ConstraintsFor(BodyId),
+            c => c.ReasonCode == BeadMaterialConstraintProvider.RequirementOutOfDateCode);
+
+        // The 0.04 row no longer allows 5052-O: the built row is unchanged, but the pairs are not.
+        Assert.Contains(Provider(recorded, At20, SpecRow("B1005010-2", 0.04, "2024-O")).ConstraintsFor(BodyId),
+            c => c.ReasonCode == BeadMaterialConstraintProvider.RequirementOutOfDateCode);
+    }
+
+    [Fact]
     public void An_uncovered_SPEC_is_still_judged_from_the_workbook()
     {
         var constraints = Provider(new FakeRequirementReader(), At20).ConstraintsFor(BodyId);

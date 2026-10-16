@@ -23,8 +23,10 @@ public sealed class SheetMetalSettings
 
     /// <summary>Loads the settings file. A missing file yields <see cref="Default"/>. A file that is present but invalid
     /// is an error, since silently ignoring an edit someone made on purpose is worse than refusing to start.</summary>
-    public static SheetMetalSettings Load(string path)
+    /// <param name="text">Words the errors shown at start-up; <see cref="SheetMetalText.Default"/> when null.</param>
+    public static SheetMetalSettings Load(string path, SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
         if (!File.Exists(path))
             return Default;
 
@@ -35,11 +37,11 @@ public sealed class SheetMetalSettings
         }
         catch (JsonException ex)
         {
-            throw new InvalidDataException($"Sheet metal settings at '{path}' are not valid JSON: {ex.Message}", ex);
+            throw new InvalidDataException(text.SettingsInvalidJson(path, ex.Message), ex);
         }
 
         if (file is null)
-            throw new InvalidDataException($"Sheet metal settings at '{path}' are empty.");
+            throw new InvalidDataException(text.SettingsEmpty(path));
 
         if (string.IsNullOrWhiteSpace(file.MaterialTablePath))
             return Default;

@@ -48,7 +48,7 @@ public class BeadsOnBodyTests
 
         Assert.Equal(BeadSpecStatus.Matched, bead.Status);
         Assert.Same(spec, Assert.Single(bead.SpecFamily));
-        Assert.Null(bead.UnidentifiedReason);
+        Assert.Null(SheetMetalText.Default.BeadUnidentifiedReason(bead));
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class BeadsOnBodyTests
 
         Assert.Equal(BeadSpecStatus.Ambiguous, bead.Status);
         Assert.False(bead.IsSpecKnown);
-        Assert.Contains("B1005010-2", bead.UnidentifiedReason);
+        Assert.Contains("B1005010-2", SheetMetalText.Default.BeadUnidentifiedReason(bead));
     }
 
     [Fact]
@@ -73,7 +73,7 @@ public class BeadsOnBodyTests
             Spec("B1005010-1"));
 
         Assert.Equal(new[] { BeadSpecStatus.GeometryUnreadable, BeadSpecStatus.Unmatched }, beads.Select(b => b.Status));
-        Assert.All(beads, b => Assert.NotNull(b.UnidentifiedReason));
+        Assert.All(beads, b => Assert.NotNull(SheetMetalText.Default.BeadUnidentifiedReason(b)));
     }
 
     // ---- A SPEC id names a family of rows, one per thickness (the B1005010-2 shape) ----

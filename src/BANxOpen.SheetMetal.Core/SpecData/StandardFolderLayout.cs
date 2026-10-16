@@ -25,22 +25,24 @@ public static class StandardFolderLayout
     /// <summary>Every Standard in <paramref name="table"/>, in file order.</summary>
     /// <exception cref="InvalidOperationException">The table was not read from a file, so it has no folder.</exception>
     /// <exception cref="InvalidDataException">A Standard value cannot be a folder name.</exception>
-    public static IReadOnlyList<StandardInfo> ListStandards(SheetMetalMaterialTable table)
+    /// <param name="text">Words the errors, which the bead dialog shows; <see cref="SheetMetalText.Default"/> when null.</param>
+    public static IReadOnlyList<StandardInfo> ListStandards(SheetMetalMaterialTable table, SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
         var root = table.SourcePath is { } path
             ? Path.GetDirectoryName(Path.GetFullPath(path)) ?? ""
-            : throw new InvalidOperationException("The sheet metal material table was not read from a file, so its Standard folders cannot be found.");
+            : throw new InvalidOperationException(text.StandardsNotFromFile);
 
         return table.Standards
-            .Select(standard => new StandardInfo(standard, standard, BeadSpecFolder(root, standard)))
+            .Select(standard => new StandardInfo(standard, standard, BeadSpecFolder(root, standard, text)))
             .ToList();
     }
 
     /// <exception cref="InvalidDataException"><paramref name="standard"/> is not a plain folder name.</exception>
-    public static string BeadSpecFolder(string rootDirectory, string standard)
+    public static string BeadSpecFolder(string rootDirectory, string standard, SheetMetalText? text = null)
     {
         if (standard.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || standard.Trim('.').Length == 0)
-            throw new InvalidDataException($"Standard '{standard}' cannot be used as a folder name.");
+            throw new InvalidDataException((text ?? SheetMetalText.Default).StandardNotAFolderName(standard));
 
         return Path.Combine(rootDirectory, standard, FeaturesFolderName, BeadFolderName);
     }
@@ -72,7 +74,7 @@ public static class StandardFolderLayout
     /// SPEC. A file named exactly as the SPEC wins outright, so "B100" is not refused just because "B1005010.xlsx"
     /// sits beside it.</summary>
     /// <exception cref="InvalidDataException">No file is named exactly as the SPEC and more than one contains it.</exception>
-    public static string? FindBeadWorkbook(StandardInfo standard, string beadSpecName)
+    public static string? FindBeadWorkbook(StandardInfo standard, string beadSpecName, SheetMetalText? text = null)
     {
         if (string.IsNullOrWhiteSpace(beadSpecName))
             return null;
@@ -88,9 +90,8 @@ public static class StandardFolderLayout
             .ToList();
 
         if (matches.Count > 1)
-            throw new InvalidDataException(
-                $"Bead SPEC '{beadSpecName}' matches {matches.Count} workbooks in '{standard.BeadSpecFolder}' " +
-                $"({string.Join(", ", matches.Select(Path.GetFileName))}). Exactly one file name may contain that SPEC name.");
+            throw new InvalidDataException((text ?? SheetMetalText.Default).BeadSpecMatchesSeveralWorkbooks(
+                beadSpecName, matches.Count, standard.BeadSpecFolder, matches.Select(m => Path.GetFileName(m))));
 
         return matches.FirstOrDefault();
     }

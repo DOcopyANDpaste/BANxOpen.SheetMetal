@@ -18,15 +18,19 @@ namespace BANxOpen.SheetMetal.NxAdapters.Common;
 /// inside ApplyPlan's per-body scope, and the bead dialog wraps its own.</summary>
 public sealed class SheetMetalPreferenceService : ISheetMetalPreferenceReader
 {
-    public const string SyncNotAppliedCode = "PREFERENCE_SYNC_NOT_APPLIED";
+    public const string SyncNotAppliedCode = SheetMetalCodes.PreferenceSyncNotApplied;
 
     private readonly NxSessionContext _context;
     private readonly SheetMetalMaterialTable _table;
+    private readonly SheetMetalText _text;
 
-    public SheetMetalPreferenceService(NxSessionContext context, SheetMetalMaterialTable table)
+    /// <param name="text">Words the failures and unreadable reads a tool shows; <see cref="SheetMetalText.Default"/>
+    /// when null.</param>
+    public SheetMetalPreferenceService(NxSessionContext context, SheetMetalMaterialTable table, SheetMetalText? text = null)
     {
         _context = context;
         _table = table;
+        _text = text ?? SheetMetalText.Default;
     }
 
     public SheetMetalPreferenceRead ReadFor(BodyId bodyId)
@@ -39,11 +43,11 @@ public sealed class SheetMetalPreferenceService : ISheetMetalPreferenceReader
         catch (NXException ex)
         {
             _context.Log.Error($"Could not scan the work part's bodies for '{bodyId}': NX {ex.ErrorCode}: {ex.Message}");
-            return SheetMetalPreferenceRead.Unreadable($"NX {ex.ErrorCode}: {ex.Message}");
+            return SheetMetalPreferenceRead.Unreadable(NxDialogText.Default.NxError(ex));
         }
 
         return body is null
-            ? SheetMetalPreferenceRead.Unreadable($"body '{bodyId}' is no longer in the work part")
+            ? SheetMetalPreferenceRead.Unreadable(_text.PreferencesBodyGone(bodyId.ToString()))
             : ReadFor(body);
     }
 
@@ -93,7 +97,7 @@ public sealed class SheetMetalPreferenceService : ISheetMetalPreferenceReader
             // units), which the thickness comparison relies on.
             var thickness = preferences.GetMaterialThickness();
             if (thickness is null)
-                return SheetMetalPreferenceRead.Unreadable("Sheet Metal Preferences have no material thickness");
+                return SheetMetalPreferenceRead.Unreadable(_text.PreferencesNoThickness);
 
             var materialName = string.IsNullOrWhiteSpace(preferences.GetMaterialName()) ? null : preferences.GetMaterialName();
             var preference = new SheetMetalPartPreference(
@@ -142,7 +146,7 @@ public sealed class SheetMetalPreferenceService : ISheetMetalPreferenceReader
         catch (NXException ex)
         {
             _context.Log.Error($"Setting Sheet Metal Preferences material to '{material}' failed: NX {ex.ErrorCode}: {ex.Message}");
-            return OperationResult.Fail(ex.ErrorCode.ToString(), $"Sheet Metal Preferences could not be set to '{material}': {ex.Message}");
+            return OperationResult.Fail(ex.ErrorCode.ToString(), _text.PreferencesSetFailed(material, ex.Message));
         }
         finally
         {
@@ -158,14 +162,13 @@ public sealed class SheetMetalPreferenceService : ISheetMetalPreferenceReader
                 _context.Log.Error($"Sheet Metal Preferences committed, but do not read back as material '{material}' with Material Table entry.");
                 return OperationResult.Fail(
                     SyncNotAppliedCode,
-                    $"Sheet Metal Preferences were updated, but NX does not show material '{material}' with Material " +
-                    "Table entry afterwards.");
+                    _text.PreferencesNotApplied(material));
             }
         }
         catch (NXException ex)
         {
             _context.Log.Error($"Reading back Sheet Metal Preferences failed: NX {ex.ErrorCode}: {ex.Message}");
-            return OperationResult.Fail(ex.ErrorCode.ToString(), $"Sheet Metal Preferences could not be read back: {ex.Message}");
+            return OperationResult.Fail(ex.ErrorCode.ToString(), _text.PreferencesReadBackFailed(ex.Message));
         }
 
         _context.Log.Info($"Sheet Metal Preferences material set to '{material}' (Material Table entry).");

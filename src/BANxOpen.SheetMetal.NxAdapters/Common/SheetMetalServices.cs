@@ -31,8 +31,10 @@ public sealed class SheetMetalServices
         SheetMetalPreferenceService preferenceService,
         SheetMetalStandardSelection standardSelection,
         SheetMetalRequirementService requirementService,
-        IReadOnlyList<INxMaterialRuleModule> materialModules)
+        IReadOnlyList<INxMaterialRuleModule> materialModules,
+        SheetMetalText text)
     {
+        Text = text;
         StandardSelection = standardSelection;
         RequirementService = requirementService;
         MaterialTable = materialTable;
@@ -44,6 +46,10 @@ public sealed class SheetMetalServices
         PreferenceService = preferenceService;
         MaterialModules = materialModules;
     }
+
+    /// <summary>The describer every sheet metal service, rule and constraint built here words its messages with. Pass it
+    /// on to the sheet metal pieces a tool builds itself (bead validation rules, the profile reader).</summary>
+    public SheetMetalText Text { get; }
 
     /// <summary>NX's sheet metal material standards file: every material, its physical material, grade and Standard.</summary>
     public SheetMetalMaterialTable MaterialTable { get; }
@@ -80,54 +86,58 @@ public sealed class SheetMetalServices
     /// <summary>Loads the config and builds the services.</summary>
     /// <returns>A failure carrying a user-facing message when the config directory or the sheet metal material
     /// standards file cannot be found, or either is invalid. Callers show it and stop, rather than starting with partial rules.</returns>
-    public static BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices> Create(NxSessionContext context)
+    /// <param name="text">Words every message the sheet metal pieces show; <see cref="SheetMetalText.Default"/> when null.</param>
+    public static BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices> Create(
+        NxSessionContext context, SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
         try
         {
-            var materialTable = SheetMetalMaterialTable.Load(SheetMetalConfigLocator.MaterialTablePath());
-            var specSource = new FileSystemBeadSpecSource(materialTable, new ExcelBeadSpecParser());
-            var specCache = new BeadSpecCache(specSource, SheetMetalConfigLocator.CacheDirectory(), context.Log.Warn);
+            var materialTable = SheetMetalMaterialTable.Load(SheetMetalConfigLocator.MaterialTablePath(text), text);
+            var specSource = new FileSystemBeadSpecSource(materialTable, new ExcelBeadSpecParser(text), text);
+            var specCache = new BeadSpecCache(specSource, SheetMetalConfigLocator.CacheDirectory(text), context.Log.Warn);
             var specLookup = new BeadSpecLookup(specCache, context.Log.Warn);
-            var beadSettings = BeadSettings.Load(SheetMetalConfigLocator.BeadSettingsPath());
+            var beadSettings = BeadSettings.Load(SheetMetalConfigLocator.BeadSettingsPath(text), text);
 
             var tracebackService = new BeadTracebackService(context);
             var inventory = new BeadFeatureInventory(context, tracebackService, new BeadGeometryReader(context));
-            var preferenceService = new SheetMetalPreferenceService(context, materialTable);
+            var preferenceService = new SheetMetalPreferenceService(context, materialTable, text);
             var standardSelection = new SheetMetalStandardSelection(materialTable);
 
             // One reader for every sheet metal feature domain; a louver or joggle domain adds its (domain, noun) here.
             var requirementStore = new NxPartRequirementStore(context);
             var requirementReader = new SheetMetalRequirementReader(
                 requirementStore,
-                new[] { (BeadMaterialConstraintProvider.ProviderDomainId, BeadRequirementFactory.FeatureNoun) });
+                new[] { (BeadMaterialConstraintProvider.ProviderDomainId, BeadRequirementFactory.FeatureNoun) },
+                text);
             var requirementService = new SheetMetalRequirementService(
-                context, inventory, specLookup, beadSettings, preferenceService, requirementStore, requirementReader);
+                context, inventory, specLookup, beadSettings, preferenceService, requirementStore, requirementReader, text);
 
             var materialModules = new INxMaterialRuleModule[]
             {
                 new BeadFeatureRuleModule(new BeadMaterialConstraintProvider(
-                    inventory, specLookup, materialTable, beadSettings, requirementReader)),
+                    inventory, specLookup, materialTable, beadSettings, requirementReader, text)),
                 new SheetMetalPreferenceRuleModule(
-                    new SheetMetalPreferenceConstraintProvider(preferenceService, materialTable),
-                    new SheetMetalRowGateRule(preferenceService, standardSelection, requirementReader),
+                    new SheetMetalPreferenceConstraintProvider(preferenceService, materialTable, text),
+                    new SheetMetalRowGateRule(preferenceService, standardSelection, requirementReader, text),
                     new SyncSheetMetalPreferenceEffectRule(materialTable),
                     new SheetMetalPreferenceSyncExecutor(preferenceService, materialTable)),
                 new SheetMetalRequirementRuleModule(
-                    new SheetMetalRequirementConstraintProvider(requirementReader, preferenceService, standardSelection),
+                    new SheetMetalRequirementConstraintProvider(requirementReader, preferenceService, standardSelection, text),
                     new RefreshRequirementsEffectRule(),
                     new RefreshRequirementsExecutor(context, preferenceService, requirementService)),
             };
 
             return BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices>.Success(new SheetMetalServices(
                 materialTable, specCache, specLookup, beadSettings,
-                tracebackService, inventory, preferenceService, standardSelection, requirementService, materialModules));
+                tracebackService, inventory, preferenceService, standardSelection, requirementService, materialModules, text));
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException or InvalidDataException
                                        or IOException or UnauthorizedAccessException)
         {
             context.Log.Error($"Sheet metal configuration could not be loaded: {ex.Message}");
             return BANxOpen.Foundation.Contracts.Common.OperationResult<SheetMetalServices>.Fail(
-                "SHEETMETAL_CONFIG_UNAVAILABLE", $"Sheet metal configuration could not be loaded: {ex.Message}");
+                SheetMetalCodes.ConfigUnavailable, text.ConfigUnavailable(ex.Message));
         }
     }
 }

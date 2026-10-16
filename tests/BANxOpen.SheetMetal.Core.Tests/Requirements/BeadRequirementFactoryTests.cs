@@ -22,7 +22,7 @@ public class BeadRequirementFactoryTests
     }
 
     [Fact]
-    public void An_applied_row_sets_the_built_thickness_and_grades()
+    public void An_applied_row_sets_the_built_thickness_and_allows_its_whole_family()
     {
         var beads = new[] { Stamped("101", "BEAD(1)", "B1005010-2", At20, At40) };
         var previous = new[] { Requirement("B1005010-2", 0.02, "2024-O", "5052-O") };
@@ -31,7 +31,7 @@ public class BeadRequirementFactoryTests
         var requirement = Assert.Single(BeadRequirementFactory.Create(beads, previous, rebuilt, currentThickness: 0.04).Requirements);
 
         Assert.Equal(0.04, requirement.Allowance.BuiltThickness);
-        Assert.Equal(new[] { "2024-O" }, requirement.Allowance.Grades);
+        Assert.Equal(new[] { "2024-O@0.0200", "5052-O@0.0200", "2024-O@0.0400" }, requirement.Allowance.Pairs.Select(p => p.Key));
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public class BeadRequirementFactoryTests
         var requirement = Assert.Single(BeadRequirementFactory.Create(beads, previous, NothingRebuilt, currentThickness: 0.04).Requirements);
 
         Assert.Equal(0.02, requirement.Allowance.BuiltThickness);
-        Assert.Equal(new[] { "2024-O", "5052-O" }, requirement.Allowance.Grades);
+        Assert.Equal(new[] { "2024-O@0.0200", "5052-O@0.0200" }, requirement.Allowance.Pairs.Select(p => p.Key));
     }
 
     [Fact]
@@ -54,7 +54,9 @@ public class BeadRequirementFactoryTests
 
         var result = BeadRequirementFactory.Create(beads, Array.Empty<SheetMetalRequirement>(), NothingRebuilt, currentThickness: 0.04);
 
-        Assert.Equal(0.04, Assert.Single(result.Requirements).Allowance.BuiltThickness);
+        var requirement = Assert.Single(result.Requirements);
+        Assert.Equal(0.04, requirement.Allowance.BuiltThickness);
+        Assert.Equal(new[] { "2024-O@0.0200", "5052-O@0.0200", "2024-O@0.0400" }, requirement.Allowance.Pairs.Select(p => p.Key));
         Assert.Single(result.Notes);
     }
 

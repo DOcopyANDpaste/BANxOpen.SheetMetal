@@ -47,23 +47,27 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
 {
     public const string ProviderDomainId = "SHEETMETAL.BEAD";
 
-    public const string GradeUnrecognizedCode = "MATERIAL_GRADE_UNRECOGNIZED";
-    public const string NotAllowedCode = "MATERIAL_NOT_ALLOWED_BY_BEAD";
-    public const string SpecNotFoundCode = "BEAD_SPEC_NOT_FOUND";
-    public const string UnstampedBeadUnmatchedCode = "BEAD_SPEC_UNMATCHED";
-    public const string FeaturesUnreadableCode = "BEAD_FEATURES_UNREADABLE";
-    public const string RequirementOutOfDateCode = "REQUIREMENT_OUT_OF_DATE";
+    // Kept as aliases of SheetMetalCodes, which is where the codes are defined.
+    public const string GradeUnrecognizedCode = SheetMetalCodes.MaterialGradeUnrecognized;
+    public const string NotAllowedCode = SheetMetalCodes.MaterialNotAllowedByBead;
+    public const string SpecNotFoundCode = SheetMetalCodes.BeadSpecNotFound;
+    public const string UnstampedBeadUnmatchedCode = SheetMetalCodes.BeadSpecUnmatched;
+    public const string FeaturesUnreadableCode = SheetMetalCodes.BeadFeaturesUnreadable;
+    public const string RequirementOutOfDateCode = SheetMetalCodes.RequirementOutOfDate;
 
     private readonly IFeatureInventory _inventory;
     private readonly IBeadSpecLookup _specs;
     private readonly SheetMetalMaterialTable _table;
     private readonly BeadSettings _settings;
     private readonly ISheetMetalRequirementReader _requirements;
+    private readonly SheetMetalText _text;
 
+    /// <param name="text">Words the violations and their sources; <see cref="SheetMetalText.Default"/> when null.</param>
     public BeadMaterialConstraintProvider(
         IFeatureInventory inventory, IBeadSpecLookup specs, SheetMetalMaterialTable table, BeadSettings settings,
-        ISheetMetalRequirementReader requirements)
+        ISheetMetalRequirementReader requirements, SheetMetalText? text = null)
     {
+        _text = text ?? SheetMetalText.Default;
         _inventory = inventory;
         _specs = specs;
         _table = table;
@@ -86,33 +90,35 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
             {
                 new MaterialConstraint(
                     DomainId,
-                    "this body's features",
+                    _text.SourceBodyFeatures,
                     FeaturesUnreadableCode,
                     _ => false,
-                    _ => $"The features on this body could not be read, so its bead SPEC restrictions cannot be " +
-                         $"checked: {error}"),
+                    _ => _text.BeadFeaturesUnreadable(error))
+                {
+                    ViolationArgs = _ => new Dictionary<string, string> { ["error"] = error },
+                },
             };
         }
 
         var applicable = new List<ApplicableSpec>();
-        var warnings = new List<(string Label, string Message)>();
+        var warnings = new List<(string Label, string Message, IReadOnlyDictionary<string, string> Args)>();
 
         foreach (var bead in BeadsOnBody.Resolve(inventory, _specs, _settings))
         {
             if (bead.IsStamped)
             {
                 applicable.Add(new ApplicableSpec(
-                    bead.StandardId!, bead.SpecId!, bead.SpecFamily, $"Bead SPEC {bead.SpecId} (Standard {bead.StandardId})"));
+                    bead.StandardId!, bead.SpecId!, bead.SpecFamily, _text.SourceStampedBead(bead.SpecId!, bead.StandardId!)));
             }
             else if (bead.IsSpecKnown)
             {
                 applicable.Add(new ApplicableSpec(
                     bead.StandardId!, bead.SpecId!, bead.SpecFamily,
-                    $"bead feature '{bead.Name}' (unstamped; geometry matches SPEC {bead.SpecId}, Standard {bead.StandardId})"));
+                    _text.SourceMatchedBead(bead.Name, bead.SpecId!, bead.StandardId!)));
             }
             else
             {
-                warnings.Add(($"bead feature '{bead.Name}'", UnidentifiedMessage(bead)));
+                warnings.Add((_text.SourceUnidentifiedBead(bead.Name), UnidentifiedMessage(bead), UnidentifiedArgs(bead)));
             }
         }
 
@@ -136,10 +142,13 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
 
         foreach (var spec in distinct.Where(s => covered.ContainsKey((s.StandardId, s.SpecId))))
         {
-            if (DriftMessage(covered[(spec.StandardId, spec.SpecId)], spec.Family) is { } drift)
+            if (Drift(covered[(spec.StandardId, spec.SpecId)], spec.Family) is { } drift)
             {
                 constraints.Add(new MaterialConstraint(
-                    DomainId, spec.Label, RequirementOutOfDateCode, _ => false, _ => drift, ConstraintSeverity.Warn));
+                    DomainId, spec.Label, RequirementOutOfDateCode, _ => false, _ => drift.Message, ConstraintSeverity.Warn)
+                {
+                    ViolationArgs = _ => drift.Args,
+                });
             }
         }
 
@@ -150,43 +159,48 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
         {
             constraints.Add(new MaterialConstraint(
                 DomainId,
-                distinct.Count == 1 ? distinct[0].Label : $"{distinct.Count} bead SPECs on this body",
+                distinct.Count == 1 ? distinct[0].Label : _text.SourceBeadSpecCount(distinct.Count),
                 GradeUnrecognizedCode,
                 candidate => _table.GradeForPhysicalMaterial(candidate.Name) is not null,
-                candidate =>
-                    $"Material '{candidate.Name}' has no row in the sheet metal material standards file, so it cannot be " +
-                    "checked against the bead SPECs on this body. Add a row for it before assigning."));
+                candidate => _text.BeadGradeUnrecognized(candidate.Name)));
         }
 
         foreach (var spec in distinct)
             constraints.Add(ConstraintFor(spec));
 
-        foreach (var (label, message) in warnings)
+        foreach (var (label, message, args) in warnings)
         {
             constraints.Add(new MaterialConstraint(
                 DomainId, label, UnstampedBeadUnmatchedCode,
                 _ => false,
                 _ => message,
-                ConstraintSeverity.Warn));
+                ConstraintSeverity.Warn)
+            {
+                ViolationArgs = _ => args,
+            });
         }
 
         return constraints;
     }
 
-    private static string UnidentifiedMessage(BeadOnBody bead) => bead.Status switch
+    private string UnidentifiedMessage(BeadOnBody bead) => bead.Status switch
     {
-        BeadSpecStatus.GeometryUnreadable =>
-            $"Bead feature '{bead.Name}' was not created by the bead tool and its geometry could not be " +
-            "read, so its SPEC material restriction is not enforced. Re-apply it with the bead dialog to " +
-            "record its SPEC.",
-        BeadSpecStatus.Ambiguous =>
-            $"Bead feature '{bead.Name}' was not created by the bead tool and its geometry matches more " +
-            $"than one SPEC ({string.Join(", ", bead.Candidates.Select(c => c.SpecId))}), so no SPEC material " +
-            "restriction is enforced for it. Re-apply it with the bead dialog to record which SPEC it is.",
-        _ =>
-            $"Bead feature '{bead.Name}' was not created by the bead tool and its geometry matches no SPEC " +
-            "in any Standard, so no SPEC material restriction is enforced for it. Re-apply it with the bead " +
-            "dialog using a valid SPEC.",
+        BeadSpecStatus.GeometryUnreadable => _text.BeadGeometryUnreadable(bead.Name),
+        BeadSpecStatus.Ambiguous => _text.BeadAmbiguous(bead.Name, string.Join(", ", bead.Candidates.Select(c => c.SpecId))),
+        _ => _text.BeadUnmatched(bead.Name),
+    };
+
+    /// <summary>UnstampedBeadUnmatchedCode: feature, status (geometryUnreadable | ambiguous | noMatch), candidates.</summary>
+    private static IReadOnlyDictionary<string, string> UnidentifiedArgs(BeadOnBody bead) => new Dictionary<string, string>
+    {
+        ["feature"] = bead.Name,
+        ["status"] = bead.Status switch
+        {
+            BeadSpecStatus.GeometryUnreadable => "geometryUnreadable",
+            BeadSpecStatus.Ambiguous => "ambiguous",
+            _ => "noMatch",
+        },
+        ["candidates"] = string.Join(", ", bead.Candidates.Select(c => c.SpecId)),
     };
 
     private MaterialConstraint ConstraintFor(ApplicableSpec spec)
@@ -198,9 +212,10 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
                 spec.Label,
                 SpecNotFoundCode,
                 _ => false,
-                _ => $"SPEC '{spec.SpecId}' is no longer in Standard '{spec.StandardId}', so no material can be " +
-                     "verified against the bead built to it. Check the Standard's workbook, or re-apply the bead " +
-                     "with a current SPEC.");
+                _ => _text.BeadSpecNotFound(spec.SpecId, spec.StandardId))
+            {
+                ViolationArgs = _ => new Dictionary<string, string> { ["spec"] = spec.SpecId, ["standard"] = spec.StandardId },
+            };
         }
 
         // Asked of a PHYSICAL MATERIAL, which carries no thickness: which Material Table row the part ends up on —
@@ -216,32 +231,39 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
             // a message that says what is actually wrong.
             candidate => _table.GradeForPhysicalMaterial(candidate.Name) is not { } grade
                          || family.Any(row => row.IsAllowedFor(grade)),
-            candidate =>
-                $"Material '{candidate.Name}' (grade '{_table.GradeForPhysicalMaterial(candidate.Name)}') is not allowed by " +
-                $"SPEC '{spec.SpecId}' at any thickness it is driven for.");
+            candidate => _text.BeadMaterialNotAllowed(candidate.Name, _table.GradeForPhysicalMaterial(candidate.Name), spec.SpecId))
+        {
+            ViolationArgs = candidate => new Dictionary<string, string>
+            {
+                ["spec"] = spec.SpecId,
+                ["grade"] = _table.GradeForPhysicalMaterial(candidate.Name) ?? string.Empty,
+            },
+        };
     }
 
-    /// <summary>Why the requirement the part holds for a SPEC no longer matches its workbook, or null when it does. The
-    /// requirement still governs — it is what the beads were built to — but re-applying them would change it.</summary>
-    private static string? DriftMessage(SheetMetalRequirement requirement, IReadOnlyList<BeadSpecRow> family)
-    {
-        var allowance = requirement.Allowance;
-        var row = family.FirstOrDefault(r => allowance.MatchesThickness(r.Thickness));
-        if (row is null)
-        {
-            return family.Count == 0
-                ? null // SpecNotFoundCode is not raised for covered SPECs, so the stamp's own path is not needed here.
-                : $"{requirement.Label}: its workbook no longer has a row at {allowance.ThicknessText} in, the thickness its " +
-                  "beads were built at. The part's requirement still applies; re-apply the beads with the Bead tool to bring them up to date.";
-        }
+    private sealed record DriftNote(string Message, IReadOnlyDictionary<string, string> Args);
 
-        var workbookGrades = BeadRequirementFactory.AllowanceOf(row).Grades;
-        var same = new HashSet<string>(workbookGrades, StringComparer.OrdinalIgnoreCase).SetEquals(allowance.Grades);
-        return same
-            ? null
-            : $"{requirement.Label}: its workbook now allows {string.Join(", ", workbookGrades)} at {allowance.ThicknessText} in, " +
-              $"but the part's requirement records {allowance.GradesText}. The requirement still applies; re-apply the beads " +
-              "with the Bead tool to bring it up to date.";
+    /// <summary>Why the requirement the part holds for a SPEC no longer matches its workbook, or null when it does. The
+    /// requirement still governs — it is what the beads were built to — but re-applying them would change it.
+    /// RequirementOutOfDateCode args: requirement, builtThickness, workbookPairs, recordedPairs.</summary>
+    private DriftNote? Drift(SheetMetalRequirement requirement, IReadOnlyList<BeadSpecRow> family)
+    {
+        if (family.Count == 0)
+            return null; // SpecNotFoundCode is not raised for covered SPECs, so the stamp's own path is not needed here.
+
+        var recorded = requirement.Allowance;
+        var workbook = SheetMetalAllowance.FromFamily(family, recorded.BuiltThickness);
+        if (workbook.SamePairsAs(recorded))
+            return null;
+
+        var args = new Dictionary<string, string>
+        {
+            ["requirement"] = requirement.Label,
+            ["builtThickness"] = recorded.ThicknessText,
+            ["workbookPairs"] = workbook.PairsText,
+            ["recordedPairs"] = recorded.PairsText,
+        };
+        return new DriftNote(_text.RequirementPairsChanged(requirement.Label, workbook.PairsText, recorded.PairsText), args);
     }
 
     /// <summary>A SPEC that applies to the body, whether read off a stamp or matched from geometry. An empty

@@ -1,3 +1,4 @@
+using BANxOpen.Materials.Core;
 using NXOpen;
 using BANxOpen.Foundation.Contracts.Common;
 using BANxOpen.Materials.Core.Assignment;
@@ -13,14 +14,11 @@ namespace BANxOpen.SheetMetal.NxAdapters.Requirements;
 /// <list type="number">
 /// <item>Makes sure the <see cref="SheetMetalRequirementNames.GradeAttribute"/> part attribute holds the grade of the
 /// row the Sheet Metal Preferences were just set to. NX writes it itself when the standards file declares the column as
-/// an attribute; this covers a standards file that does not, since every GRADE requirement reads it.</item>
+/// an attribute; this covers a standards file that does not, since every PAIR requirement reads it.</item>
 /// <item>Refreshes the bead requirements, with nothing rebuilt — names and cleanup only.</item>
 /// </list></summary>
 public sealed class RefreshRequirementsExecutor : ISideEffectExecutor
 {
-    private static readonly IReadOnlyDictionary<(string StandardId, string SpecId), BeadSpecRow> NothingRebuilt =
-        new Dictionary<(string, string), BeadSpecRow>();
-
     private readonly NxSessionContext _context;
     private readonly SheetMetalPreferenceService _preferences;
     private readonly SheetMetalRequirementService _requirements;
@@ -40,7 +38,7 @@ public sealed class RefreshRequirementsExecutor : ISideEffectExecutor
         if (instruction.InstructionType != InstructionType)
         {
             return OperationResult.Fail(
-                "UNSUPPORTED_INSTRUCTION",
+                MaterialsCodes.UnsupportedInstruction,
                 $"{nameof(RefreshRequirementsExecutor)} cannot execute instruction type '{instruction.InstructionType}'.");
         }
 
@@ -48,7 +46,7 @@ public sealed class RefreshRequirementsExecutor : ISideEffectExecutor
         if (!grade.Ok)
             return grade;
 
-        var refreshed = _requirements.RefreshBeads(BodyResolver.GetBodyId(body), NothingRebuilt);
+        var refreshed = _requirements.RefreshBeads(BodyResolver.GetBodyId(body), SheetMetalRequirementService.NothingRebuilt);
         return refreshed.Ok
             ? OperationResult.Success()
             : OperationResult.Fail(refreshed.ErrorCode ?? "REQUIREMENT_REFRESH_FAILED", refreshed.Message ?? "");

@@ -16,8 +16,9 @@ namespace BANxOpen.SheetMetal.Requirements;
 /// <item>For a SPEC with no requirement yet (beads built before requirements existed), the family row at the sheet's
 /// current thickness — the best available baseline, said so in the result's notes.</item>
 /// </list>
-/// The allowed grades follow the same precedence: an applied row's grades, else the existing requirement's (re-applying
-/// the beads is what brings a revised workbook into the part), else the baseline row's.</summary>
+/// The allowed (grade, thickness) pairs follow the same precedence: the applied SPEC's whole family, else the existing
+/// requirement's (re-applying the beads is what brings a revised workbook into the part), else the baseline's
+/// family.</summary>
 public static class BeadRequirementFactory
 {
     public const string FeatureNoun = "Bead SPEC";
@@ -29,12 +30,15 @@ public static class BeadRequirementFactory
     /// <param name="rebuilt">The SPEC rows applied in this run, by (Standard, SPEC id). Empty when nothing was built.</param>
     /// <param name="currentThickness">The sheet's thickness now, for the baseline of a SPEC with no requirement. Null
     /// when unknown, in which case such a SPEC gets no requirement.</param>
+    /// <param name="text">Words the notes; <see cref="SheetMetalText.Default"/> when null.</param>
     public static Result Create(
         IReadOnlyList<BeadOnBody> beads,
         IReadOnlyList<SheetMetalRequirement> previous,
         IReadOnlyDictionary<(string StandardId, string SpecId), BeadSpecRow> rebuilt,
-        double? currentThickness)
+        double? currentThickness,
+        SheetMetalText? text = null)
     {
+        text ??= SheetMetalText.Default;
         var requirements = new List<SheetMetalRequirement>();
         var notes = new List<string>();
 
@@ -64,7 +68,7 @@ public static class BeadRequirementFactory
 
             if (rebuilt.TryGetValue(group.Key, out var applied))
             {
-                allowance = AllowanceOf(applied);
+                allowance = SheetMetalAllowance.FromFamily(FamilyOf(group, applied), applied.Thickness);
                 source = applied.WorkbookName;
             }
             else if (previousByKey.TryGetValue(key, out var existing))
@@ -75,17 +79,15 @@ public static class BeadRequirementFactory
             else if (currentThickness is { } thickness
                      && group.Select(b => b.SpecAt(thickness)).FirstOrDefault(row => row is not null) is { } baseline)
             {
-                allowance = AllowanceOf(baseline);
+                allowance = SheetMetalAllowance.FromFamily(FamilyOf(group, baseline), baseline.Thickness);
                 source = $"{baseline.WorkbookName} (baseline from the sheet's thickness when first recorded)";
-                notes.Add($"{FeatureNoun} {specId} (Standard {standardId}) had no requirement; it was recorded at the " +
-                          $"sheet's current {ThicknessMatchRule.Format(thickness)} in.");
+                notes.Add(text.RequirementRecordedAtCurrentThickness(FeatureNoun, specId, standardId, ThicknessMatchRule.Format(thickness)));
             }
             else
             {
-                notes.Add($"{FeatureNoun} {specId} (Standard {standardId}) has no requirement, and none could be " +
-                          (currentThickness is { } t
-                              ? $"recorded: the SPEC is not driven for the sheet's {ThicknessMatchRule.Format(t)} in. Re-apply its beads at a thickness it covers."
-                              : "recorded: the sheet's thickness is unknown."));
+                notes.Add(currentThickness is { } t
+                    ? text.RequirementNotRecordedNotDriven(FeatureNoun, specId, standardId, ThicknessMatchRule.Format(t))
+                    : text.RequirementNotRecordedThicknessUnknown(FeatureNoun, specId, standardId));
             }
 
             if (allowance is not null)
@@ -98,7 +100,7 @@ public static class BeadRequirementFactory
         return new Result(requirements, notes);
     }
 
-    /// <summary>The grades a SPEC row marks YES, in the workbook's column order.</summary>
-    public static SheetMetalAllowance AllowanceOf(BeadSpecRow row) =>
-        new(row.Thickness, row.AllowedMaterialGrades.Where(kv => kv.Value).Select(kv => kv.Key).ToList());
+    /// <summary>The SPEC family the group's beads resolved to, or the one row when none of them carries it.</summary>
+    private static IReadOnlyList<BeadSpecRow> FamilyOf(IEnumerable<BeadOnBody> group, BeadSpecRow row) =>
+        group.Select(b => b.SpecFamily).FirstOrDefault(f => f.Count > 0) ?? new[] { row };
 }

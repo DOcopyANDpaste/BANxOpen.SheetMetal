@@ -32,9 +32,17 @@ internal static class RequirementFixtures
     public static BeadOnBody Unmatched(string featureKey, string name) =>
         new(featureKey, name, BeadSpecStatus.Unmatched, null, null, Array.Empty<BeadSpecRow>(), Array.Empty<BeadSpecRow>());
 
+    /// <summary>A requirement allowing only <paramref name="grades"/> at the built thickness.</summary>
     public static SheetMetalRequirement Requirement(string specId, double builtThickness, params string[] grades) =>
+        Requirement(specId, SheetMetalAllowance.AtBuiltThickness(builtThickness, grades));
+
+    /// <summary>A requirement allowing what <paramref name="family"/> marks YES, built at <paramref name="builtThickness"/>.</summary>
+    public static SheetMetalRequirement Requirement(string specId, double builtThickness, params BeadSpecRow[] family) =>
+        Requirement(specId, SheetMetalAllowance.FromFamily(family, builtThickness));
+
+    private static SheetMetalRequirement Requirement(string specId, SheetMetalAllowance allowance) =>
         new(BeadMaterialConstraintProvider.ProviderDomainId, BeadRequirementFactory.FeatureNoun, Standard, specId,
-            new SheetMetalAllowance(builtThickness, grades), new[] { new RequirementUser("101", "BEAD(1)") }, "B1005010");
+            allowance, new[] { new RequirementUser("101", "BEAD(1)") }, "B1005010");
 
     public static readonly IReadOnlyDictionary<(string StandardId, string SpecId), BeadSpecRow> NothingRebuilt =
         new Dictionary<(string, string), BeadSpecRow>();
