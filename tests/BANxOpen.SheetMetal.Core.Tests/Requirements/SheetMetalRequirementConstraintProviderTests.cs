@@ -65,11 +65,21 @@ public class SheetMetalRequirementConstraintProviderTests
     }
 
     [Fact]
-    public void Unreadable_requirements_block_everything()
+    public void Unreadable_requirements_warn_rather_than_block()
     {
         var outcome = Gate(new FakeRequirementReader(Array.Empty<SheetMetalRequirement>(), "NX 1: broken"), "Aluminum 2024-O");
 
+        Assert.Equal(RuleDecision.Warn, outcome.Decision);
         Assert.Equal(SheetMetalRequirementConstraintProvider.UnreadableCode, outcome.ReasonCode);
+    }
+
+    [Fact]
+    public void A_requirement_no_feature_uses_is_not_validated()
+    {
+        var orphan = Requirement("B1", 0.02, "2024-O") with { Users = Array.Empty<RequirementUser>() };
+
+        Assert.Equal(RuleDecision.Allow, Gate(new FakeRequirementReader(orphan), "Aluminum 5052-O").Decision);
+        Assert.Equal(RuleDecision.Allow, Pick(new FakeRequirementReader(orphan), "Aluminum 5052-O", "5052-O_0.020").Decision);
     }
 
     [Fact]
@@ -133,11 +143,11 @@ public class SheetMetalRequirementConstraintProviderTests
     }
 
     [Fact]
-    public void Unreadable_requirements_block_every_row()
+    public void Unreadable_requirements_warn_on_every_row()
     {
         var outcome = Pick(new FakeRequirementReader(Array.Empty<SheetMetalRequirement>(), "NX 1: broken"), "Aluminum 2024-O", "2024-O_0.020");
 
-        Assert.Equal(RuleDecision.Block, outcome.Decision);
+        Assert.Equal(RuleDecision.Warn, outcome.Decision);
         Assert.Equal(SheetMetalRowGateRule.RefusedCode, outcome.ReasonCode);
     }
 

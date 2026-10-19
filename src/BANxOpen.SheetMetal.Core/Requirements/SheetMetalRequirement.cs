@@ -95,11 +95,24 @@ public sealed record SheetMetalRequirement(
 {
     /// <summary>The requirement's key within its domain — the same Standard + SPEC identity the feature's driving
     /// expressions are named by.</summary>
-    public string Key => KeyFor(ShortStandard, SpecId);
+    public string Key => KeyFor(StandardId, SpecId);
 
-    public string Label => $"{FeatureNoun} {SpecId} (Standard {ShortStandard})";
+    public string Label => $"{FeatureNoun} {SpecId} (Standard {ShortStandardOf(StandardId)})";
 
-    private string ShortStandard => StandardId.Replace("_Standards", string.Empty, StringComparison.OrdinalIgnoreCase);
+    /// <summary>Whether a feature in the part still relies on it. <see cref="Users"/> are the check's live associated
+    /// objects, so a requirement whose check is gone, or whose features were all deleted, is not in use: it guards
+    /// nothing, is not validated, and the next refresh deletes it.</summary>
+    public bool IsInUse => Users.Count > 0;
 
-    public static string KeyFor(string standardId, string specId) => $"{standardId}|{specId}";
+    /// <summary>The key for a Standard + SPEC. The Standard is shortened (<see cref="ShortStandardOf"/>), so a key built
+    /// from a bead's full Standard id matches one read back from the part, whose key holds the short one.</summary>
+    public static string KeyFor(string standardId, string specId) => $"{ShortStandardOf(standardId)}|{specId}";
+
+    private const string StandardSuffix = "_Standards";
+
+    /// <summary>"Bombardier_B_Standards" → "Bombardier_B": the folder suffix adds nothing to a name the user reads.</summary>
+    public static string ShortStandardOf(string standardId) =>
+        standardId.EndsWith(StandardSuffix, StringComparison.OrdinalIgnoreCase)
+            ? standardId.Substring(0, standardId.Length - StandardSuffix.Length)
+            : standardId;
 }

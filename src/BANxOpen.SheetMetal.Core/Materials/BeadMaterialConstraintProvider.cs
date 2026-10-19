@@ -26,7 +26,8 @@ namespace BANxOpen.SheetMetal.Materials;
 /// is allowed. Stamping the SPEC onto the feature happens in the bead dialog, never here.</item>
 /// </list>
 ///
-/// Blocking cases, since a restriction that silently fails open is the defect this exists to fix:
+/// Warned about — never blocked, since feature validation must not stand in the way of a preference update, but never
+/// silent either, since a restriction that silently fails open is the defect this exists to fix:
 /// <list type="bullet">
 /// <item>A material with no row in the sheet metal material standards file has no grade to check against any SPEC →
 /// <see cref="GradeUnrecognizedCode"/>. Emitted once, ahead of the per-SPEC constraints, so the user is told
@@ -85,7 +86,7 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
 
         if (inventory.ReadError is { } error)
         {
-            // Nothing about the body's beads is known, so nothing can be allowed on it.
+            // Nothing about the body's beads is known, so nothing was checked against them.
             return new[]
             {
                 new MaterialConstraint(
@@ -93,7 +94,8 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
                     _text.SourceBodyFeatures,
                     FeaturesUnreadableCode,
                     _ => false,
-                    _ => _text.BeadFeaturesUnreadable(error))
+                    _ => _text.BeadFeaturesUnreadable(error),
+                    ConstraintSeverity.Warn)
                 {
                     ViolationArgs = _ => new Dictionary<string, string> { ["error"] = error },
                 },
@@ -132,17 +134,17 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
             .Select(g => g.First())
             .ToList();
 
-        // SPECs with a requirement in the part are the requirement provider's to judge. When the requirements could not
-        // all be read nothing is handed over: that provider blocks on the read error, and the workbook check below keeps
-        // every bead guarded even if it is not registered.
+        // SPECs with a requirement in use in the part are the requirement provider's to judge. When the requirements
+        // could not all be read nothing is handed over: that provider warns about the read error, and the workbook check
+        // below keeps every bead checked even if it is not registered.
         var (requirements, errors) = _requirements.ReadAll();
         var covered = requirements
-            .Where(r => r.Domain == ProviderDomainId)
-            .ToDictionary(r => (r.StandardId, r.SpecId), r => r);
+            .Where(r => r.Domain == ProviderDomainId && r.IsInUse)
+            .ToDictionary(r => r.Key, r => r);
 
-        foreach (var spec in distinct.Where(s => covered.ContainsKey((s.StandardId, s.SpecId))))
+        foreach (var spec in distinct.Where(s => covered.ContainsKey(SheetMetalRequirement.KeyFor(s.StandardId, s.SpecId))))
         {
-            if (Drift(covered[(spec.StandardId, spec.SpecId)], spec.Family) is { } drift)
+            if (Drift(covered[SheetMetalRequirement.KeyFor(spec.StandardId, spec.SpecId)], spec.Family) is { } drift)
             {
                 constraints.Add(new MaterialConstraint(
                     DomainId, spec.Label, RequirementOutOfDateCode, _ => false, _ => drift.Message, ConstraintSeverity.Warn)
@@ -153,7 +155,7 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
         }
 
         if (errors.Count == 0)
-            distinct = distinct.Where(s => !covered.ContainsKey((s.StandardId, s.SpecId))).ToList();
+            distinct = distinct.Where(s => !covered.ContainsKey(SheetMetalRequirement.KeyFor(s.StandardId, s.SpecId))).ToList();
 
         if (distinct.Count > 0)
         {
@@ -162,7 +164,8 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
                 distinct.Count == 1 ? distinct[0].Label : _text.SourceBeadSpecCount(distinct.Count),
                 GradeUnrecognizedCode,
                 candidate => _table.GradeForPhysicalMaterial(candidate.Name) is not null,
-                candidate => _text.BeadGradeUnrecognized(candidate.Name)));
+                candidate => _text.BeadGradeUnrecognized(candidate.Name),
+                ConstraintSeverity.Warn));
         }
 
         foreach (var spec in distinct)
@@ -212,7 +215,8 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
                 spec.Label,
                 SpecNotFoundCode,
                 _ => false,
-                _ => _text.BeadSpecNotFound(spec.SpecId, spec.StandardId))
+                _ => _text.BeadSpecNotFound(spec.SpecId, spec.StandardId),
+                ConstraintSeverity.Warn)
             {
                 ViolationArgs = _ => new Dictionary<string, string> { ["spec"] = spec.SpecId, ["standard"] = spec.StandardId },
             };
@@ -227,11 +231,12 @@ public sealed class BeadMaterialConstraintProvider : IFeatureMaterialConstraintP
             DomainId,
             spec.Label,
             NotAllowedCode,
-            // An unmapped grade passes here on purpose: the grade-recognition constraint already blocks it, with
+            // An unmapped grade passes here on purpose: the grade-recognition constraint already warns about it, with
             // a message that says what is actually wrong.
             candidate => _table.GradeForPhysicalMaterial(candidate.Name) is not { } grade
                          || family.Any(row => row.IsAllowedFor(grade)),
-            candidate => _text.BeadMaterialNotAllowed(candidate.Name, _table.GradeForPhysicalMaterial(candidate.Name), spec.SpecId))
+            candidate => _text.BeadMaterialNotAllowed(candidate.Name, _table.GradeForPhysicalMaterial(candidate.Name), spec.SpecId),
+            ConstraintSeverity.Warn)
         {
             ViolationArgs = candidate => new Dictionary<string, string>
             {

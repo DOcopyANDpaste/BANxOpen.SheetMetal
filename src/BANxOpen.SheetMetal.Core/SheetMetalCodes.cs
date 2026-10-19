@@ -21,6 +21,8 @@ public static class SheetMetalCodes
     public const string MaterialNotAllowed = "MATERIAL_NOT_ALLOWED";
 
     // ---- Constraints on a body's material ----
+    // The feature constraints below (bead, requirement) are all Warns: feature validation never blocks a preference
+    // update. Only the preference basics (PreferencesUnreadable, PreferenceMaterialNotInTable, RowNotOffered) block.
 
     /// <summary>Args: spec, grade, material, source.</summary>
     public const string MaterialNotAllowedByBead = "MATERIAL_NOT_ALLOWED_BY_BEAD";
@@ -55,7 +57,7 @@ public static class SheetMetalCodes
     /// <summary>Args: row, material, standard (empty when no Standard is chosen).</summary>
     public const string RowNotOffered = "SHEETMETAL_ROW_NOT_OFFERED";
 
-    /// <summary>Args: row, rowThickness, refusal (requirementsUnreadable — a Block | pairNotAllowed — a Warn), and for
+    /// <summary>A Warn. Args: row, rowThickness, refusal (requirementsUnreadable | pairNotAllowed), and for
     /// pairNotAllowed requirement, grade, builtThickness, allowedPairs.</summary>
     public const string RowRefusedByRequirement = "SHEETMETAL_ROW_REFUSED_BY_REQUIREMENT";
 

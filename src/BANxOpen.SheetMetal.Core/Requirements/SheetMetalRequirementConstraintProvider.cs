@@ -51,20 +51,23 @@ public sealed class SheetMetalRequirementConstraintProvider : IFeatureMaterialCo
         var (requirements, errors) = _requirements.ReadAll();
         if (errors.Count > 0)
         {
-            // A requirement that could not be read might forbid anything; nothing is allowed until it is fixed.
+            // Warned, not blocked: feature validation never stands in the way of a preference update. Re-opening the
+            // feature's tool rewrites what could not be read.
             return new[]
             {
                 new MaterialConstraint(
                     DomainId, _text.SourcePartRequirements, UnreadableCode,
                     _ => false,
-                    _ => _text.RequirementsUnreadableForAssignment(string.Join(" ", errors)))
+                    _ => _text.RequirementsUnreadableForAssignment(string.Join(" ", errors)),
+                    ConstraintSeverity.Warn)
                 {
                     ViolationArgs = _ => new Dictionary<string, string> { ["error"] = string.Join(" ", errors) },
                 },
             };
         }
 
-        return requirements.Select(ConstraintFor).ToList();
+        // A requirement no feature uses any more guards nothing; the next refresh deletes it.
+        return requirements.Where(r => r.IsInUse).Select(ConstraintFor).ToList();
     }
 
     /// <summary>Warns, never blocks: a material the beads do not allow is still the user's to assign. The assignment

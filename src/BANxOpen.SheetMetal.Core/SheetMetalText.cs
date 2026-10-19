@@ -132,7 +132,8 @@ public class SheetMetalText
         "with a current SPEC.";
 
     public virtual string BeadMaterialNotAllowed(string material, string? grade, string spec) =>
-        $"Material '{material}' (grade '{grade}') is not allowed by SPEC '{spec}' at any thickness it is driven for.";
+        $"Material '{material}' (grade '{grade}') is not allowed by SPEC '{spec}' at any thickness it is driven for. " +
+        "Re-apply the bead with a SPEC that allows it.";
 
     public virtual string RequirementPairsChanged(string requirement, string workbookPairs, string recordedPairs) =>
         $"{requirement}: its workbook now allows {workbookPairs}, but the part's requirement records {recordedPairs}. " +
@@ -151,7 +152,8 @@ public class SheetMetalText
         "belong to the part, so this assignment sets the preferences' material for all of them.";
 
     public virtual string RequirementsUnreadableForAssignment(string errors) =>
-        $"This part's sheet metal requirements could not be read, so no material can be checked against them: {errors}";
+        $"This part's sheet metal requirements could not be read, so the material was not checked against them: {errors} " +
+        "The assignment goes ahead; re-open the Bead tool to rewrite them.";
 
     public virtual string RequirementMaterialNotAllowed(string material, string requirement, string allowedPairs) =>
         $"Material '{material}' has no row {requirement} allows (allowed: {allowedPairs}). " +
@@ -165,10 +167,9 @@ public class SheetMetalText
         (standard is null ? "in the sheet metal material standards file" : $"under Standard '{standard}'") +
         ". Pick another row.";
 
-    public virtual string RowRefused(string row, string reason) => $"'{row}' cannot be used: {reason}";
-
     public virtual string RowRefusedRequirementsUnreadable =>
-        "This part's sheet metal requirements could not be read, so no row can be checked against them.";
+        "This part's sheet metal requirements could not be read, so this row was not checked against them. " +
+        "The assignment goes ahead; re-open the Bead tool to rewrite them.";
 
     public virtual string RowPairNotAllowed(string row, string requirement, string grade, string rowThickness, string allowedPairs) =>
         $"'{row}' ({grade} at {rowThickness} in) is not allowed by {requirement} (allowed: {allowedPairs}). " +
@@ -189,6 +190,10 @@ public class SheetMetalText
     public virtual string RequirementIncomplete(string featureNoun, string spec, string standard) =>
         $"The requirement for {featureNoun} {spec} (Standard {standard}) is incomplete or was " +
         "edited by hand; re-apply its features to rewrite it.";
+
+    /// <param name="error">Why it could not be read (<see cref="RequirementIncomplete"/>).</param>
+    public virtual string RequirementRewritten(string error) =>
+        $"{error} It was rewritten from its SPEC workbook.";
 
     public virtual string RequirementRecordedAtCurrentThickness(string featureNoun, string spec, string standard, string thickness) =>
         $"{featureNoun} {spec} (Standard {standard}) had no requirement; it was recorded at the sheet's current {thickness} in.";

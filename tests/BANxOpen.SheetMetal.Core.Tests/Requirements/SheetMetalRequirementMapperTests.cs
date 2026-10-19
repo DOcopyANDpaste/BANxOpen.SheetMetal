@@ -1,4 +1,5 @@
 using BANxOpen.Foundation.Contracts.Requirements;
+using BANxOpen.Foundation.Core.Requirements;
 using BANxOpen.SheetMetal.Beads;
 using BANxOpen.SheetMetal.Beads.Rules;
 using BANxOpen.SheetMetal.Requirements;
@@ -18,7 +19,7 @@ public class SheetMetalRequirementMapperTests
 
         Assert.Equal(SheetMetalRequirementNames.PairAspect, spec.Aspect);
         Assert.Equal(RequirementValueType.String, spec.ValueType);
-        Assert.Equal(new[] { "2024-O@0.0400", "5052-O@0.0400", "2024-O@0.0625" }, Assert.IsType<SetOfValuesRule>(spec.Rule).Values);
+        Assert.Equal(new[] { "\"2024-O@0.0400\"", "\"5052-O@0.0400\"", "\"2024-O@0.0625\"" }, Assert.IsType<SetOfValuesRule>(spec.Rule).Values);
         Assert.Equal(SheetMetalRequirementNames.PairExpression, spec.CheckedFormula);
         Assert.Equal(RequirementSeverity.Error, spec.Severity);
         Assert.Equal("XX_Standard|B1005010-2", spec.Key);
@@ -85,6 +86,49 @@ public class SheetMetalRequirementMapperTests
 
         Assert.Empty(requirements);
         Assert.Contains("B1005010-2", Assert.Single(errors));
+    }
+
+    [Fact]
+    public void An_unquoted_requirement_still_reads_but_is_replaced_by_the_next_refresh()
+    {
+        var wanted = Assert.Single(SheetMetalRequirementMapper.ToSpecs(Requirement("B1005010-2", 0.04, At40)));
+        var unquoted = wanted with { Rule = new SetOfValuesRule(new[] { "2024-O@0.0400", "5052-O@0.0400" }) };
+
+        var (requirements, errors) = SheetMetalRequirementMapper.FromRead(
+            new RequirementRead(new[] { new StoredRequirement(unquoted, RequirementStatus.Failed) }, Array.Empty<string>()), "Bead SPEC");
+
+        Assert.Empty(errors);
+        Assert.Equal(new[] { "2024-O@0.0400", "5052-O@0.0400" }, Assert.Single(requirements).Allowance.Pairs.Select(p => p.Key));
+        Assert.Single(RequirementDiff.Compute(new[] { unquoted }, new[] { wanted }).ToReplace);
+    }
+
+    [Fact]
+    public void A_requirement_no_feature_uses_is_read_but_not_in_use()
+    {
+        var orphan = Requirement("B1005010-2", 0.04, At40) with { Users = Array.Empty<RequirementUser>() };
+        var stored = SheetMetalRequirementMapper.ToSpecs(orphan).Select(s => new StoredRequirement(s, RequirementStatus.Unknown)).ToList();
+
+        var (requirements, errors) = SheetMetalRequirementMapper.FromRead(new RequirementRead(stored, Array.Empty<string>()), "Bead SPEC");
+
+        Assert.Empty(errors);
+        Assert.False(Assert.Single(requirements).IsInUse);
+    }
+
+    [Fact]
+    public void An_unreadable_requirement_no_feature_uses_is_skipped_without_an_error()
+    {
+        var written = Assert.Single(SheetMetalRequirementMapper.ToSpecs(Requirement("B1005010-2", 0.04, "2024-O")));
+        var broken = written with
+        {
+            Description = written.Description.Where(l => !l.StartsWith("Built at")).ToList(),
+            AssociatedObjectKeys = Array.Empty<string>(),
+        };
+
+        var (requirements, errors) = SheetMetalRequirementMapper.FromRead(
+            new RequirementRead(new[] { new StoredRequirement(broken, RequirementStatus.Unknown) }, Array.Empty<string>()), "Bead SPEC");
+
+        Assert.Empty(requirements);
+        Assert.Empty(errors);
     }
 
     [Fact]

@@ -69,7 +69,7 @@ public static class SheetMetalRequirementMapper
                 requirement.Key,
                 SheetMetalRequirementNames.PairAspect,
                 RequirementValueType.String,
-                new SetOfValuesRule(allowance.Pairs.Select(p => p.Key).ToList()),
+                new SetOfValuesRule(allowance.Pairs.Select(p => Quoted(p.Key)).ToList()),
                 RequirementSeverity.Error,
                 SheetMetalRequirementNames.PairExpression,
                 new[]
@@ -85,6 +85,14 @@ public static class SheetMetalRequirementMapper
         };
     }
 
+    /// <summary>NX compares a String requirement's set of values with the checked expression's value including its
+    /// double quotes (<c>"2024-O@0.0400"</c>), so an unquoted value never matches.</summary>
+    private static string Quoted(string value) => $"\"{value}\"";
+
+    /// <summary>A value as written, without the quotes NX needs — and as an older part may hold it, without any.</summary>
+    private static string Unquoted(string value) =>
+        value.Length >= 2 && value[0] == '"' && value[value.Length - 1] == '"' ? value.Substring(1, value.Length - 2) : value;
+
     /// <summary>The short word a domain's requirement names start with: "SHEETMETAL.BEAD" → "BEAD".</summary>
     private static string NameAliasFor(string domain)
     {
@@ -94,8 +102,9 @@ public static class SheetMetalRequirementMapper
 
     /// <summary>The requirements held in the part for one domain. A key whose value is not what this mapper writes is
     /// reported in the errors rather than skipped — a caller would otherwise treat a half-read requirement as no
-    /// requirement. A key still held as the legacy GRADE + THICKNESS aspects reads as those grades at that
-    /// thickness.</summary>
+    /// requirement — unless no live feature uses it (its check is gone, or every feature it named was deleted): such a
+    /// leftover guards nothing, and the next refresh deletes it. A key still held as the legacy GRADE + THICKNESS
+    /// aspects reads as those grades at that thickness.</summary>
     /// <param name="text">Words the read errors; <see cref="SheetMetalText.Default"/> when null.</param>
     public static (IReadOnlyList<SheetMetalRequirement> Requirements, IReadOnlyList<string> Errors) FromRead(
         RequirementRead read, string featureNoun, SheetMetalText? text = null)
@@ -115,7 +124,8 @@ public static class SheetMetalRequirementMapper
             var specs = group.Select(r => r.Spec).ToList();
             if (AllowanceOf(specs) is not { } allowance)
             {
-                errors.Add(text.RequirementIncomplete(featureNoun, specId, standardId));
+                if (specs.Any(s => s.AssociatedObjectKeys.Count > 0))
+                    errors.Add(text.RequirementIncomplete(featureNoun, specId, standardId));
                 continue;
             }
 
@@ -141,14 +151,14 @@ public static class SheetMetalRequirementMapper
             if (pair.Rule is not SetOfValuesRule values || BuiltAtOf(pair.Description) is not { } built)
                 return null;
 
-            var pairs = values.Values.Select(MaterialThicknessPair.ParseKey).ToList();
+            var pairs = values.Values.Select(v => MaterialThicknessPair.ParseKey(Unquoted(v))).ToList();
             return pairs.Any(p => p is null) ? null : new SheetMetalAllowance(built, pairs.Select(p => p!).ToList());
         }
 
         var grade = specs.FirstOrDefault(s => s.Aspect == SheetMetalRequirementNames.LegacyGradeAspect);
         var thickness = specs.FirstOrDefault(s => s.Aspect == SheetMetalRequirementNames.LegacyThicknessAspect);
         return grade?.Rule is SetOfValuesRule grades && thickness?.Rule is EqualsValueRule builtAt
-            ? SheetMetalAllowance.AtBuiltThickness(builtAt.Value, grades.Values)
+            ? SheetMetalAllowance.AtBuiltThickness(builtAt.Value, grades.Values.Select(Unquoted))
             : null;
     }
 

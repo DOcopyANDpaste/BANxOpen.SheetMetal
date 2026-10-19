@@ -88,13 +88,13 @@ public class BeadMaterialConstraintProviderTests
     }
 
     [Fact]
-    public void Blocks_a_material_whose_grade_the_SPEC_forbids()
+    public void Warns_on_a_material_whose_grade_the_SPEC_forbids()
     {
         var provider = Provider(new[] { Stamp("B1005010-1") }, Spec("B1005010-1", "2024-O"));
 
         var outcome = Gate(provider, "Aluminum 7075-T6");
 
-        Assert.Equal(RuleDecision.Block, outcome.Decision);
+        Assert.Equal(RuleDecision.Warn, outcome.Decision);
         Assert.Equal(BeadMaterialConstraintProvider.NotAllowedCode, outcome.ReasonCode);
     }
 
@@ -128,7 +128,7 @@ public class BeadMaterialConstraintProviderTests
     }
 
     [Fact]
-    public void Blocks_a_grade_no_thickness_of_the_SPEC_permits()
+    public void Warns_on_a_grade_no_thickness_of_the_SPEC_permits()
     {
         var provider = Provider(
             new[] { Stamp("B1005010-2") },
@@ -137,7 +137,7 @@ public class BeadMaterialConstraintProviderTests
 
         var outcome = Gate(provider, "Aluminum 7075-T6");
 
-        Assert.Equal(RuleDecision.Block, outcome.Decision);
+        Assert.Equal(RuleDecision.Warn, outcome.Decision);
         Assert.Equal(BeadMaterialConstraintProvider.NotAllowedCode, outcome.ReasonCode);
         Assert.Contains("at any thickness", outcome.Message);
     }
@@ -158,13 +158,13 @@ public class BeadMaterialConstraintProviderTests
     }
 
     [Fact]
-    public void Blocks_an_unmapped_material_rather_than_letting_it_through_unchecked()
+    public void Warns_on_an_unmapped_material_rather_than_letting_it_through_unchecked()
     {
         var provider = Provider(new[] { Stamp("B1005010-1") }, Spec("B1005010-1", "2024-O", "5052-O", "7075-T6"));
 
         var outcome = Gate(provider, "Titanium Grade 5");
 
-        Assert.Equal(RuleDecision.Block, outcome.Decision);
+        Assert.Equal(RuleDecision.Warn, outcome.Decision);
         Assert.Equal(BeadMaterialConstraintProvider.GradeUnrecognizedCode, outcome.ReasonCode);
     }
 
@@ -183,13 +183,13 @@ public class BeadMaterialConstraintProviderTests
     }
 
     [Fact]
-    public void A_SPEC_missing_from_its_workbook_blocks_every_material()
+    public void A_SPEC_missing_from_its_workbook_warns_on_every_material()
     {
         var provider = Provider(new[] { Stamp("B1005010-RETIRED") });
 
         var outcome = Gate(provider, "Aluminum 2024-O");
 
-        Assert.Equal(RuleDecision.Block, outcome.Decision);
+        Assert.Equal(RuleDecision.Warn, outcome.Decision);
         Assert.Equal(BeadMaterialConstraintProvider.SpecNotFoundCode, outcome.ReasonCode);
         Assert.Contains("B1005010-RETIRED", outcome.Message);
     }
@@ -205,7 +205,7 @@ public class BeadMaterialConstraintProviderTests
         Assert.Equal(RuleDecision.Allow, Gate(provider, "Aluminum 2024-O").Decision);
 
         var refused = Gate(provider, "Aluminum 5052-O");
-        Assert.Equal(RuleDecision.Block, refused.Decision);
+        Assert.Equal(RuleDecision.Warn, refused.Decision);
         Assert.Contains("B1005010-2", refused.Message);
     }
 
@@ -232,7 +232,7 @@ public class BeadMaterialConstraintProviderTests
         Assert.Equal(RuleDecision.Allow, Gate(provider, "Aluminum 2024-O").Decision);
 
         var refused = Gate(provider, "Aluminum 7075-T6");
-        Assert.Equal(RuleDecision.Block, refused.Decision);
+        Assert.Equal(RuleDecision.Warn, refused.Decision);
         Assert.Equal(BeadMaterialConstraintProvider.NotAllowedCode, refused.ReasonCode);
     }
 
@@ -256,7 +256,7 @@ public class BeadMaterialConstraintProviderTests
         var nearly = GeometryOf(spec) with { Height = spec.Height + BeadSettings.DefaultGeometryMatchTolerance / 2 };
         var provider = Provider(NoStamps, new[] { new UnstampedFeature("Bead(12)", nearly) }, spec);
 
-        Assert.Equal(RuleDecision.Block, Gate(provider, "Aluminum 7075-T6").Decision);
+        Assert.Equal(RuleDecision.Warn, Gate(provider, "Aluminum 7075-T6").Decision);
     }
 
     [Fact]
@@ -301,13 +301,15 @@ public class BeadMaterialConstraintProviderTests
     }
 
     [Fact]
-    public void An_unmatched_bead_warning_never_masks_a_stamped_bead_refusal()
+    public void An_unmatched_bead_warning_never_masks_a_stamped_bead_violation()
     {
         var spec = Spec("B1005010-1", "2024-O");
         var unlike = GeometryOf(spec) with { Radius = 9.0 };
         var provider = Provider(new[] { Stamp("B1005010-1") }, new[] { new UnstampedFeature("Bead(12)", unlike) }, spec);
 
-        Assert.Equal(RuleDecision.Block, Gate(provider, "Aluminum 7075-T6").Decision);
+        var outcome = Gate(provider, "Aluminum 7075-T6");
+        Assert.Equal(RuleDecision.Warn, outcome.Decision);
+        Assert.Contains(outcome.Inner, w => w.ReasonCode == BeadMaterialConstraintProvider.NotAllowedCode);
     }
 
     [Fact]
@@ -323,7 +325,7 @@ public class BeadMaterialConstraintProviderTests
     }
 
     [Fact]
-    public void Features_that_could_not_be_read_block_rather_than_count_as_no_beads()
+    public void Features_that_could_not_be_read_warn_rather_than_count_as_no_beads()
     {
         var provider = new BeadMaterialConstraintProvider(
             new FixedInventory(BodyFeatureInventory.Unreadable("NX 12345: feature list unavailable")),
@@ -331,7 +333,7 @@ public class BeadMaterialConstraintProviderTests
 
         var outcome = Gate(provider, "Aluminum 2024-O");
 
-        Assert.Equal(RuleDecision.Block, outcome.Decision);
+        Assert.Equal(RuleDecision.Warn, outcome.Decision);
         Assert.Equal(BeadMaterialConstraintProvider.FeaturesUnreadableCode, outcome.ReasonCode);
         Assert.Contains("NX 12345", outcome.Message);
     }
@@ -347,7 +349,7 @@ public class BeadMaterialConstraintProviderTests
             Spec("B1005010-2", "2024-O", "7075-T6"));
 
         var allowed = new[] { "Aluminum 2024-O", "Aluminum 5052-O", "Aluminum 7075-T6", "Titanium Grade 5" }
-            .Where(name => Gate(provider, name).Decision != RuleDecision.Block);
+            .Where(name => Gate(provider, name).Decision == RuleDecision.Allow);
 
         Assert.Equal(new[] { "Aluminum 2024-O" }, allowed);
     }

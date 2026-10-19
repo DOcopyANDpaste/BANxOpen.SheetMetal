@@ -17,7 +17,7 @@ namespace BANxOpen.SheetMetal.Materials;
 /// (grade, thickness) pair not in its SPEC family — is warned about, not refused: the requirement is left as it is,
 /// and its failing NX check reminds the user to re-apply the features. A row they allow at a thickness other than the
 /// one the features were built at is warned about too, since the check passes but the geometry is the built row's.
-/// Requirements that cannot be read refuse every row.</item>
+/// Requirements that cannot be read are warned about, and ones no feature uses any more are ignored.</item>
 /// <item>A row whose thickness is not the body's needs confirming: usually a mistake, but the user's to make —
 /// <c>SheetMetalPreferenceCheck</c> reports the mismatch afterwards either way. A thickness NX will not report
 /// counts as matching, since there is nothing to disagree with.</item>
@@ -77,22 +77,9 @@ public sealed class SheetMetalRowGateRule : IMaterialValidationRule
         }
 
         var (requirements, errors) = _requirements.ReadAll();
-        if (errors.Count > 0)
-        {
-            // A requirement that could not be read might forbid anything: the constraint provider blocks the
-            // assignment for the same reason. RefusedCode: row, rowThickness, refusal.
-            return new RuleOutcome(Id, RuleDecision.Block, RefusedCode, _text.RowRefused(row.Name, _text.RowRefusedRequirementsUnreadable))
-            {
-                Args = new Dictionary<string, string>
-                {
-                    ["row"] = row.Name,
-                    ["rowThickness"] = ThicknessMatchRule.Format(row.Thickness),
-                    ["refusal"] = "requirementsUnreadable",
-                },
-            };
-        }
-
-        var warning = RequirementWarningFor(row, requirements);
+        var warning = errors.Count > 0
+            ? UnreadableWarning(row)
+            : RequirementWarningFor(row, requirements.Where(r => r.IsInUse).ToList());
 
         // Unreadable preferences are refused by SheetMetalPreferenceConstraintProvider; there is no thickness to
         // compare against here.
@@ -118,6 +105,19 @@ public sealed class SheetMetalRowGateRule : IMaterialValidationRule
     }
 
     private static RuleOutcome Allow() => new(Id, RuleDecision.Allow, null, null);
+
+    /// <summary>Requirements that could not be read are warned about, like every other feature check: they must not stand
+    /// in the way of a preference update. RefusedCode: row, rowThickness, refusal.</summary>
+    private RuleOutcome UnreadableWarning(SheetMetalMaterialRow row) =>
+        new(Id, RuleDecision.Warn, RefusedCode, _text.RowRefusedRequirementsUnreadable)
+        {
+            Args = new Dictionary<string, string>
+            {
+                ["row"] = row.Name,
+                ["rowThickness"] = ThicknessMatchRule.Format(row.Thickness),
+                ["refusal"] = "requirementsUnreadable",
+            },
+        };
 
     /// <summary>What the part's requirements say about <paramref name="row"/>, or null when they are content. Warned,
     /// not blocked: the assignment keeps the requirements as they are, so their NX checks go on reporting the features

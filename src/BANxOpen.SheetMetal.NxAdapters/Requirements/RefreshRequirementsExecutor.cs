@@ -15,7 +15,8 @@ namespace BANxOpen.SheetMetal.NxAdapters.Requirements;
 /// <item>Makes sure the <see cref="SheetMetalRequirementNames.GradeAttribute"/> part attribute holds the grade of the
 /// row the Sheet Metal Preferences were just set to. NX writes it itself when the standards file declares the column as
 /// an attribute; this covers a standards file that does not, since every PAIR requirement reads it.</item>
-/// <item>Refreshes the bead requirements, with nothing rebuilt — names and cleanup only.</item>
+/// <item>Refreshes the bead requirements, with nothing rebuilt — names and cleanup only. A failed refresh is only
+/// warned about: the assignment it follows has already succeeded.</item>
 /// </list></summary>
 public sealed class RefreshRequirementsExecutor : ISideEffectExecutor
 {
@@ -46,10 +47,13 @@ public sealed class RefreshRequirementsExecutor : ISideEffectExecutor
         if (!grade.Ok)
             return grade;
 
+        // The material and the Sheet Metal Preferences are already set. Requirements that could not be refreshed are
+        // the feature tool's to sort out, so they are warned about rather than turning the assignment into a failure.
         var refreshed = _requirements.RefreshBeads(BodyResolver.GetBodyId(body), SheetMetalRequirementService.NothingRebuilt);
-        return refreshed.Ok
-            ? OperationResult.Success()
-            : OperationResult.Fail(refreshed.ErrorCode ?? "REQUIREMENT_REFRESH_FAILED", refreshed.Message ?? "");
+        if (!refreshed.Ok)
+            _context.Log.Warn($"The bead requirements were not refreshed ({refreshed.ErrorCode}): {refreshed.Message} Re-open the Bead tool to rewrite them.");
+
+        return OperationResult.Success();
     }
 
     private OperationResult EnsureGradeAttribute()

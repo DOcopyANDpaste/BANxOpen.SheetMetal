@@ -87,7 +87,7 @@ public sealed class SheetMetalRequirementService
         if (!planned.Ok)
             return OperationResult<IReadOnlyList<string>>.Fail(planned.ErrorCode ?? SheetMetalCodes.RequirementRefreshFailed, planned.Message ?? "");
 
-        var (specs, notes) = planned.Value!;
+        var (specs, notes, _) = planned.Value!;
         var written = Write(specs, notes);
         return written.Ok
             ? OperationResult<IReadOnlyList<string>>.Success(notes)
@@ -103,10 +103,8 @@ public sealed class SheetMetalRequirementService
         if (!planned.Ok)
             return OperationResult<BeadRequirementSync>.Fail(planned.ErrorCode ?? SheetMetalCodes.RequirementRefreshFailed, planned.Message ?? "");
 
-        var (specs, notes) = planned.Value!;
-        var held = _store.Read(BeadMaterialConstraintProvider.ProviderDomainId);
-        var upToDate = held.Ok
-                       && RequirementDiff.Compute(held.Requirements.Select(r => r.Spec).ToList(), specs).IsEmpty
+        var (specs, notes, held) = planned.Value!;
+        var upToDate = RequirementDiff.Compute(held.Requirements.Select(r => r.Spec).ToList(), specs).IsEmpty
                        && (specs.Count == 0 || BridgeIsCurrent());
         if (upToDate)
             return OperationResult<BeadRequirementSync>.Success(new BeadRequirementSync(false, notes));
@@ -117,37 +115,40 @@ public sealed class SheetMetalRequirementService
             : OperationResult<BeadRequirementSync>.Fail(written.ErrorCode ?? FoundationCodes.RequirementWriteFailed, written.Message ?? "");
     }
 
-    /// <summary>The bead requirements <paramref name="bodyId"/>'s beads impose, as the specs to write, and notes on the
-    /// SPECs that could not be given one. Fails rather than plan from a read that went wrong: writing what it planned
-    /// would delete requirements the part holds.</summary>
-    private OperationResult<(IReadOnlyList<RequirementSpec> Specs, IReadOnlyList<string> Notes)> Plan(
-        BodyId bodyId, IReadOnlyDictionary<(string StandardId, string SpecId), BeadSpecRow> rebuilt)
+    private sealed record Planned(IReadOnlyList<RequirementSpec> Specs, IReadOnlyList<string> Notes, RequirementRead Held);
+
+    /// <summary>The bead requirements <paramref name="bodyId"/>'s beads impose, as the specs to write, notes on the
+    /// SPECs that could not be given one, and the read they were planned from.
+    ///
+    /// Fails only on what makes writing unsafe: beads that could not be read, or requirements NX itself could not read
+    /// (writing would delete them unseen). A requirement NX reads but this domain does not understand (incomplete, or
+    /// edited by hand) is left out of what is kept, so it is rewritten from its SPEC family like a new one — with a note
+    /// — rather than leaving every Apply stuck on it.</summary>
+    private OperationResult<Planned> Plan(BodyId bodyId, IReadOnlyDictionary<(string StandardId, string SpecId), BeadSpecRow> rebuilt)
     {
-        if (FindExpression(SheetMetalRequirementNames.ThicknessExpression) is null)
+        var inventory = _inventory.Read(bodyId);
+        if (inventory.ReadError is { } readError)
+            return OperationResult<Planned>.Fail(SheetMetalCodes.BeadFeaturesUnreadable, _text.BeadsUnreadableForRequirements(readError));
+
+        var held = _store.Read(BeadMaterialConstraintProvider.ProviderDomainId);
+        if (!held.Ok)
+            return OperationResult<Planned>.Fail(FoundationCodes.RequirementsUnreadable, _text.RequirementsUnreadableForRefresh(string.Join(" ", held.Errors)));
+
+        var (previous, unreadable) = SheetMetalRequirementMapper.FromRead(held, BeadRequirementFactory.FeatureNoun, _text);
+        var beads = BeadsOnBody.Resolve(inventory, _specs, _settings);
+        var result = BeadRequirementFactory.Create(beads, previous, rebuilt, _preferences.ReadFor(bodyId).BodyThickness, _text);
+        IReadOnlyList<RequirementSpec> specs = result.Requirements.SelectMany(SheetMetalRequirementMapper.ToSpecs).ToList();
+
+        // Only needed to write a requirement: with no beads left, the refresh to nothing still removes the leftovers.
+        if (specs.Count > 0 && FindExpression(SheetMetalRequirementNames.ThicknessExpression) is null)
         {
-            return OperationResult<(IReadOnlyList<RequirementSpec>, IReadOnlyList<string>)>.Fail(
+            return OperationResult<Planned>.Fail(
                 SheetMetalCodes.ThicknessExpressionMissing,
                 _text.ThicknessExpressionMissing(SheetMetalRequirementNames.ThicknessExpression));
         }
 
-        var inventory = _inventory.Read(bodyId);
-        if (inventory.ReadError is { } readError)
-        {
-            return OperationResult<(IReadOnlyList<RequirementSpec>, IReadOnlyList<string>)>.Fail(
-                SheetMetalCodes.BeadFeaturesUnreadable, _text.BeadsUnreadableForRequirements(readError));
-        }
-
-        var (previous, errors) = _reader.ReadAll();
-        if (errors.Count > 0)
-        {
-            return OperationResult<(IReadOnlyList<RequirementSpec>, IReadOnlyList<string>)>.Fail(
-                FoundationCodes.RequirementsUnreadable, _text.RequirementsUnreadableForRefresh(string.Join(" ", errors)));
-        }
-
-        var beads = BeadsOnBody.Resolve(inventory, _specs, _settings);
-        var result = BeadRequirementFactory.Create(beads, previous, rebuilt, _preferences.ReadFor(bodyId).BodyThickness, _text);
-        IReadOnlyList<RequirementSpec> specs = result.Requirements.SelectMany(SheetMetalRequirementMapper.ToSpecs).ToList();
-        return OperationResult<(IReadOnlyList<RequirementSpec>, IReadOnlyList<string>)>.Success((specs, result.Notes));
+        var notes = unreadable.Select(_text.RequirementRewritten).Concat(result.Notes).ToList();
+        return OperationResult<Planned>.Success(new Planned(specs, notes, held));
     }
 
     private OperationResult Write(IReadOnlyList<RequirementSpec> specs, IReadOnlyList<string> notes)
