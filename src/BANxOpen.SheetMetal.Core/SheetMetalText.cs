@@ -60,8 +60,7 @@ public class SheetMetalText
 
     /// <summary>A body with no material, against preferences that name one — out of sync for a tool that assigns it.</summary>
     public virtual string PreferenceBodyHasNoMaterial(string row, string physicalMaterial) =>
-        $"Sheet Metal Preferences have material '{row}', made of '{physicalMaterial}', but this body has no material."+
-        "Material will be automatically assigned to the body on applied.";
+        $"Sheet Metal Preferences have material '{row}', made of '{physicalMaterial}', but this body has no material.";
 
     public virtual string PreferenceThicknessMismatch(string bodyThickness, string preferenceThickness) =>
         $"This sheet metal is {bodyThickness} thick, but Sheet Metal Preferences specify {preferenceThickness}. " +
