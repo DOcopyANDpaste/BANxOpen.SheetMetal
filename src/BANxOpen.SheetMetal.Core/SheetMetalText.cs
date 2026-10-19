@@ -240,15 +240,15 @@ public class SheetMetalText
 
     public virtual string ConfigUnavailable(string detail) => $"Sheet metal configuration could not be loaded: {detail}";
 
-    public virtual string ConfigDirectoryNotFound(string markerFile, IEnumerable<string> attempted, string environmentVariable) =>
-        $"Could not locate the sheet metal config directory (a folder containing {markerFile}). " +
-        $"Tried: {string.Join("; ", attempted)}. Set {environmentVariable} to that folder.";
+    public virtual string ConfigDirectoryNotFound(string settingsFile, IEnumerable<string> attempted) =>
+        $"Could not locate the sheet metal root directory (no {settingsFile} under UGII_USER_DIR, UGII_GROUP_DIR or UGII_SITE_DIR). " +
+        $"Tried: {string.Join("; ", attempted)}.";
 
-    public virtual string MaterialTablePathNotSet(string settingsPath) =>
-        $"materialTablePath is not set in {settingsPath}. Set it to the sheet metal material standards file.";
+    public virtual string MaterialTableNotSet(string settingsPath) =>
+        $"materialTable is not set in {settingsPath}. Set it to the file name of the sheet metal material standards file in the sheet metal root.";
 
     public virtual string MaterialTableFileMissing(string settingsPath, string path) =>
-        $"The sheet metal material standards file set in {settingsPath} (materialTablePath) does not exist: {path}";
+        $"The sheet metal material standards file set in {settingsPath} (materialTable) does not exist: {path}";
 
     public virtual string SettingsInvalidJson(string path, string detail) => $"Sheet metal settings at '{path}' are not valid JSON: {detail}";
     public virtual string SettingsEmpty(string path) => $"Sheet metal settings at '{path}' are empty.";

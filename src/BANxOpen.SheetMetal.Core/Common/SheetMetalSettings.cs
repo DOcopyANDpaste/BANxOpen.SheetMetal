@@ -2,24 +2,24 @@ using Newtonsoft.Json;
 
 namespace BANxOpen.SheetMetal.Common;
 
-/// <summary>Tool-wide sheet metal settings, read from <c>sheetmetal-settings.json</c> in the sheet metal config directory:
+/// <summary>Tool-wide sheet metal settings, read from <c>sheetmetal-settings.json</c> in the sheet metal root's
+/// BA_NXOPEN_settings folder (see <see cref="SheetMetalConfigLocator"/>):
 /// <code>
 /// {
-///   "materialTablePath": null
+///   "materialTable": "sheet_metal_material_table.xml"
 /// }
 /// </code>
 ///
-/// Almost everything is decided by NX's sheet metal material standards file instead; this only says where to find it.</summary>
+/// Almost everything is decided by NX's sheet metal material standards file instead; this only says which file it is.</summary>
 public sealed class SheetMetalSettings
 {
     public static SheetMetalSettings Default { get; } = new(null);
 
-    public SheetMetalSettings(string? materialTablePath) => MaterialTablePath = materialTablePath;
+    public SheetMetalSettings(string? materialTable) => MaterialTable = materialTable;
 
-    /// <summary>The sheet metal material standards file. Null when not set, which
-    /// <see cref="SheetMetalConfigLocator.MaterialTablePath"/> reports as an error. A relative path is resolved against the folder holding the settings file, not the working directory,
-    /// which inside NX is unrelated to where the config lives.</summary>
-    public string? MaterialTablePath { get; }
+    /// <summary>File name of the sheet metal material standards file, which lives in the sheet metal root. Null when
+    /// not set, which <see cref="SheetMetalConfigLocator.MaterialTablePath"/> reports as an error.</summary>
+    public string? MaterialTable { get; }
 
     /// <summary>Loads the settings file. A missing file yields <see cref="Default"/>. A file that is present but invalid
     /// is an error, since silently ignoring an edit someone made on purpose is worse than refusing to start.</summary>
@@ -43,19 +43,13 @@ public sealed class SheetMetalSettings
         if (file is null)
             throw new InvalidDataException(text.SettingsEmpty(path));
 
-        if (string.IsNullOrWhiteSpace(file.MaterialTablePath))
-            return Default;
-
-        var tablePath = file.MaterialTablePath;
-        if (Path.IsPathRooted(tablePath))
-            return new SheetMetalSettings(Path.GetFullPath(tablePath));
-
-        var settingsDirectory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? "";
-        return new SheetMetalSettings(Path.GetFullPath(Path.Combine(settingsDirectory, tablePath)));
+        return string.IsNullOrWhiteSpace(file.MaterialTable)
+            ? Default
+            : new SheetMetalSettings(file.MaterialTable!.Trim());
     }
 
     private sealed class SettingsFile
     {
-        public string? MaterialTablePath { get; set; }
+        public string? MaterialTable { get; set; }
     }
 }

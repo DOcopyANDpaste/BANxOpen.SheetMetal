@@ -18,31 +18,23 @@ public class SheetMetalSettingsTests : IDisposable
     }
 
     [Fact]
-    public void A_missing_file_uses_NXs_standards_file()
+    public void A_missing_file_leaves_the_table_unset()
     {
-        Assert.Null(SheetMetalSettings.Load(Path.Combine(_dir, "absent.json")).MaterialTablePath);
+        Assert.Null(SheetMetalSettings.Load(Path.Combine(_dir, "absent.json")).MaterialTable);
     }
 
     [Fact]
-    public void A_null_path_uses_NXs_standards_file()
+    public void A_null_table_is_unset()
     {
-        Assert.Null(SheetMetalSettings.Load(Write("""{ "materialTablePath": null }""")).MaterialTablePath);
+        Assert.Null(SheetMetalSettings.Load(Write("""{ "materialTable": null }""")).MaterialTable);
     }
 
     [Fact]
-    public void A_relative_path_resolves_against_the_settings_folder()
+    public void The_table_file_name_is_read_as_given()
     {
-        var settings = SheetMetalSettings.Load(Write("""{ "materialTablePath": "tables\\sheet_metal_material_table.csv" }"""));
+        var settings = SheetMetalSettings.Load(Write("""{ "materialTable": "sheet_metal_material_table.xml" }"""));
 
-        Assert.Equal(Path.Combine(_dir, "tables", "sheet_metal_material_table.csv"), settings.MaterialTablePath);
-    }
-
-    [Fact]
-    public void An_absolute_path_is_used_as_given()
-    {
-        var settings = SheetMetalSettings.Load(Write("""{ "materialTablePath": "C:\\Standards\\sheet_metal_material_table.csv" }"""));
-
-        Assert.Equal(@"C:\Standards\sheet_metal_material_table.csv", settings.MaterialTablePath);
+        Assert.Equal("sheet_metal_material_table.xml", settings.MaterialTable);
     }
 
     [Fact]

@@ -5,8 +5,15 @@ namespace BANxOpen.SheetMetal.Tests.Common;
 public class SheetMetalConfigLocatorTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "BANxOpenLocatorTests_" + Guid.NewGuid().ToString("N"));
+    private readonly Dictionary<string, string?> _environment = new();
 
-    public SheetMetalConfigLocatorTests() => Directory.CreateDirectory(_root);
+    public SheetMetalConfigLocatorTests()
+    {
+        Directory.CreateDirectory(_root);
+        _environment["UGII_USER_DIR"] = Dir("user");
+        _environment["UGII_GROUP_DIR"] = Dir("group");
+        _environment["UGII_SITE_DIR"] = Dir("site");
+    }
 
     public void Dispose()
     {
@@ -21,68 +28,78 @@ public class SheetMetalConfigLocatorTests : IDisposable
         return path;
     }
 
-    private string ConfigAt(params string[] parts)
+    /// <summary>A sheet metal root under <paramref name="ugiiDirectory"/> holding the settings file.</summary>
+    private string SheetMetalRootIn(string ugiiDirectory)
     {
-        var dir = Dir(parts);
-        File.WriteAllText(Path.Combine(dir, "sheetmetal-settings.json"), "{}");
-        return dir;
+        var settings = Dir(ugiiDirectory, "SHEETMETAL", "BA_NXOPEN_settings");
+        File.WriteAllText(Path.Combine(settings, "sheetmetal-settings.json"), "{}");
+        return Path.Combine(_root, ugiiDirectory, "SHEETMETAL");
+    }
+
+    private string Locate(string? rootOverride = null) =>
+        SheetMetalConfigLocator.LocateFrom(rootOverride, v => _environment.TryGetValue(v, out var value) ? value : null);
+
+    [Fact]
+    public void User_wins_over_group_and_site()
+    {
+        var user = SheetMetalRootIn("user");
+        SheetMetalRootIn("group");
+        SheetMetalRootIn("site");
+
+        Assert.Equal(user, Locate());
     }
 
     [Fact]
-    public void Finds_config_deployed_beside_the_assemblies()
+    public void Group_wins_over_site()
     {
-        var bin = Dir("deploy");
-        var config = ConfigAt("deploy", "config");
+        var group = SheetMetalRootIn("group");
+        SheetMetalRootIn("site");
 
-        Assert.Equal(config, SheetMetalConfigLocator.LocateFrom(bin, environmentValue: null));
+        Assert.Equal(group, Locate());
     }
 
     [Fact]
-    public void Finds_the_repo_config_from_this_repos_own_build_output()
+    public void Falls_back_to_site()
     {
-        var config = ConfigAt("BANxOpen.SheetMetal", "config");
-        var bin = Dir("BANxOpen.SheetMetal", "tests", "Some.Tests", "bin", "Debug", "net8.0");
-
-        Assert.Equal(config, SheetMetalConfigLocator.LocateFrom(bin, environmentValue: null));
+        Assert.Equal(SheetMetalRootIn("site"), Locate());
     }
 
     [Fact]
-    public void Finds_the_sheet_metal_repo_config_from_a_dialog_built_in_a_sibling_repo()
+    public void Ignores_a_SHEETMETAL_folder_without_the_settings_file()
     {
-        // The dialogs live in their own repos; the DLL that runs this search is copied into their bin folders.
-        var config = ConfigAt("BANxOpen.SheetMetal", "config");
-        var bin = Dir("NXOPEN.Material", "BANxOpen.Ui.MaterialAssignment", "bin", "Debug", "net48");
+        Dir("user", "SHEETMETAL"); // somebody else's sheet metal files, not ours
+        var site = SheetMetalRootIn("site");
 
-        Assert.Equal(config, SheetMetalConfigLocator.LocateFrom(bin, environmentValue: null));
+        Assert.Equal(site, Locate());
     }
 
     [Fact]
-    public void Ignores_an_unrelated_folder_called_config()
+    public void Skips_unset_variables()
     {
-        Dir("NXOPEN.Material", "config"); // no settings file: somebody else's config
-        var real = ConfigAt("BANxOpen.SheetMetal", "config");
-        var bin = Dir("NXOPEN.Material", "BANxOpen.Ui.MaterialAssignment", "bin", "Debug", "net48");
+        _environment["UGII_USER_DIR"] = null;
+        var site = SheetMetalRootIn("site");
 
-        Assert.Equal(real, SheetMetalConfigLocator.LocateFrom(bin, environmentValue: null));
+        Assert.Equal(site, Locate());
     }
 
     [Fact]
-    public void The_environment_variable_wins_over_anything_found_by_searching()
+    public void The_override_wins_over_anything_found_by_searching()
     {
-        ConfigAt("deploy", "config");
-        var configured = Dir("shared", "sheetmetal");
+        SheetMetalRootIn("user");
+        var configured = Dir("shared", "SHEETMETAL");
 
-        Assert.Equal(configured, SheetMetalConfigLocator.LocateFrom(Dir("deploy"), configured));
+        Assert.Equal(configured, Locate(configured));
     }
 
     [Fact]
     public void Reports_everywhere_it_looked_when_nothing_is_found()
     {
-        var bin = Dir("nowhere", "bin");
+        _environment["UGII_GROUP_DIR"] = null;
 
-        var ex = Assert.Throws<DirectoryNotFoundException>(() => SheetMetalConfigLocator.LocateFrom(bin, environmentValue: null));
+        var ex = Assert.Throws<DirectoryNotFoundException>(() => Locate());
 
-        Assert.Contains(Path.Combine(bin, "config"), ex.Message);
-        Assert.Contains(SheetMetalConfigLocator.EnvironmentVariable, ex.Message);
+        Assert.Contains(Path.Combine(_root, "user", "SHEETMETAL"), ex.Message);
+        Assert.Contains("UGII_GROUP_DIR", ex.Message);
+        Assert.Contains(Path.Combine(_root, "site", "SHEETMETAL"), ex.Message);
     }
 }
