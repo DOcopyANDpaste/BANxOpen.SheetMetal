@@ -5,18 +5,23 @@ namespace BANxOpen.SheetMetal.Tests.Common;
 public class SheetMetalConfigLocatorTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "BANxOpenLocatorTests_" + Guid.NewGuid().ToString("N"));
-    private readonly Dictionary<string, string?> _environment = new();
+    private readonly Dictionary<string, string?> _saved = SheetMetalConfigLocator.SearchVariables.ToDictionary(v => v, Environment.GetEnvironmentVariable);
 
     public SheetMetalConfigLocatorTests()
     {
         Directory.CreateDirectory(_root);
-        _environment["UGII_USER_DIR"] = Dir("user");
-        _environment["UGII_GROUP_DIR"] = Dir("group");
-        _environment["UGII_SITE_DIR"] = Dir("site");
+        Environment.SetEnvironmentVariable("UGII_USER_DIR", Dir("user"));
+        Environment.SetEnvironmentVariable("UGII_GROUP_DIR", Dir("group"));
+        Environment.SetEnvironmentVariable("UGII_SITE_DIR", Dir("site"));
+        SheetMetalConfigLocator.RootDirectory = null!;
     }
 
     public void Dispose()
     {
+        foreach (var saved in _saved)
+            Environment.SetEnvironmentVariable(saved.Key, saved.Value);
+        SheetMetalConfigLocator.RootDirectory = null!;
+
         if (Directory.Exists(_root))
             Directory.Delete(_root, recursive: true);
     }
@@ -29,15 +34,12 @@ public class SheetMetalConfigLocatorTests : IDisposable
     }
 
     /// <summary>A sheet metal root under <paramref name="ugiiDirectory"/> holding the settings file.</summary>
-    private string SheetMetalRootIn(string ugiiDirectory)
+    private string SheetMetalRootIn(string ugiiDirectory, string settingsJson = "{}")
     {
         var settings = Dir(ugiiDirectory, "SHEETMETAL", "BA_NXOPEN_settings");
-        File.WriteAllText(Path.Combine(settings, "sheetmetal-settings.json"), "{}");
+        File.WriteAllText(Path.Combine(settings, "sheetmetal-settings.json"), settingsJson);
         return Path.Combine(_root, ugiiDirectory, "SHEETMETAL");
     }
-
-    private string Locate(string? rootOverride = null) =>
-        SheetMetalConfigLocator.LocateFrom(rootOverride, v => _environment.TryGetValue(v, out var value) ? value : null);
 
     [Fact]
     public void User_wins_over_group_and_site()
@@ -46,7 +48,7 @@ public class SheetMetalConfigLocatorTests : IDisposable
         SheetMetalRootIn("group");
         SheetMetalRootIn("site");
 
-        Assert.Equal(user, Locate());
+        Assert.Equal(user, SheetMetalConfigLocator.RootDirectory);
     }
 
     [Fact]
@@ -55,13 +57,7 @@ public class SheetMetalConfigLocatorTests : IDisposable
         var group = SheetMetalRootIn("group");
         SheetMetalRootIn("site");
 
-        Assert.Equal(group, Locate());
-    }
-
-    [Fact]
-    public void Falls_back_to_site()
-    {
-        Assert.Equal(SheetMetalRootIn("site"), Locate());
+        Assert.Equal(group, SheetMetalConfigLocator.RootDirectory);
     }
 
     [Fact]
@@ -70,33 +66,44 @@ public class SheetMetalConfigLocatorTests : IDisposable
         Dir("user", "SHEETMETAL"); // somebody else's sheet metal files, not ours
         var site = SheetMetalRootIn("site");
 
-        Assert.Equal(site, Locate());
+        Assert.Equal(site, SheetMetalConfigLocator.RootDirectory);
     }
 
     [Fact]
     public void Skips_unset_variables()
     {
-        _environment["UGII_USER_DIR"] = null;
+        Environment.SetEnvironmentVariable("UGII_USER_DIR", null);
         var site = SheetMetalRootIn("site");
 
-        Assert.Equal(site, Locate());
+        Assert.Equal(site, SheetMetalConfigLocator.RootDirectory);
     }
 
     [Fact]
-    public void The_override_wins_over_anything_found_by_searching()
+    public void A_set_root_wins_over_anything_found_by_searching()
     {
         SheetMetalRootIn("user");
         var configured = Dir("shared", "SHEETMETAL");
 
-        Assert.Equal(configured, Locate(configured));
+        SheetMetalConfigLocator.RootDirectory = configured;
+
+        Assert.Equal(configured, SheetMetalConfigLocator.RootDirectory);
+    }
+
+    [Fact]
+    public void The_material_table_is_in_the_root_not_the_settings_folder()
+    {
+        var root = SheetMetalRootIn("site", """{ "materialTable": "sheet_metal_material_table.xml" }""");
+        File.WriteAllText(Path.Combine(root, "sheet_metal_material_table.xml"), "");
+
+        Assert.Equal(Path.Combine(root, "sheet_metal_material_table.xml"), SheetMetalConfigLocator.MaterialTablePath);
     }
 
     [Fact]
     public void Reports_everywhere_it_looked_when_nothing_is_found()
     {
-        _environment["UGII_GROUP_DIR"] = null;
+        Environment.SetEnvironmentVariable("UGII_GROUP_DIR", null);
 
-        var ex = Assert.Throws<DirectoryNotFoundException>(() => Locate());
+        var ex = Assert.Throws<DirectoryNotFoundException>(() => SheetMetalConfigLocator.RootDirectory);
 
         Assert.Contains(Path.Combine(_root, "user", "SHEETMETAL"), ex.Message);
         Assert.Contains("UGII_GROUP_DIR", ex.Message);

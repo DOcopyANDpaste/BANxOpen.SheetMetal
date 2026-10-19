@@ -93,11 +93,11 @@ public sealed class SheetMetalServices
         text ??= SheetMetalText.Default;
         try
         {
-            var materialTable = SheetMetalMaterialTable.Load(SheetMetalConfigLocator.MaterialTablePath(text), text);
+            var materialTable = SheetMetalMaterialTable.Load(SheetMetalConfigLocator.MaterialTablePath, text);
             var specSource = new FileSystemBeadSpecSource(materialTable, new ExcelBeadSpecParser(text), text);
-            var specCache = new BeadSpecCache(specSource, SheetMetalConfigLocator.CacheDirectory(text), context.Log.Warn);
+            var specCache = new BeadSpecCache(specSource, SheetMetalConfigLocator.CacheDirectory, context.Log.Warn);
             var specLookup = new BeadSpecLookup(specCache, context.Log.Warn);
-            var beadSettings = BeadSettings.Load(SheetMetalConfigLocator.BeadSettingsPath(text), text);
+            var beadSettings = BeadSettings.Load(SheetMetalConfigLocator.BeadSettingsPath, text);
 
             var tracebackService = new BeadTracebackService(context);
             var inventory = new BeadFeatureInventory(context, tracebackService, new BeadGeometryReader(context));

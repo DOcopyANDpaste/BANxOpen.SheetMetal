@@ -29,9 +29,6 @@ coverage*.info
 packages/
 !packages/build/
 
-## Generated at runtime: parsed SPEC workbooks, keyed on workbook mtime.
-config/cache/
-
 ## OS cruft
 Thumbs.db
 ehthumbs.db
